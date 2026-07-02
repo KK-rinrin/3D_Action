@@ -67,3 +67,11 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+<<<<<<< HEAD
+=======
+.vs/
+.github/
+Log.txt
+Data/Csv/EnemyData.xlsx
+x64/
+>>>>>>> 9aed22d (データをコミット)
