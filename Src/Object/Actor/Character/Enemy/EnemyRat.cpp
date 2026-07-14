@@ -8,8 +8,12 @@
 
 EnemyRat::EnemyRat(const EnemyBase::EnemyData& data)
 	:
-	EnemyBase(data)
+	EnemyBase(data),
+	state_(STATE::NONE),
+	step_(0.0f),
+	moveInRangeTargetPos_(SchoolUtility::VECTOR_ZERO)
 {
+	knockBackParam_.weight = 50.0f;
 }
 
 EnemyRat::~EnemyRat(void)
@@ -55,16 +59,32 @@ void EnemyRat::InitCollider(void)
 
 void EnemyRat::InitAnimation(void)
 {
+	int type = -1;
 	animController_ = new AnimationController(transform_.modelId);
-	animController_->AddInFbx(static_cast<int>(ANIM_TYPE::IDLE), 30.0f, 8);
 
-	animController_->AddInFbx(static_cast<int>(ANIM_TYPE::WALK), 30.0f, 13);
+	// IDLEアニメ
+	type = static_cast<int>(ANIM_TYPE::IDLE);
+	animController_->AddInFbx(type, 30.0f, type);
+
+	// WALKアニメ
+	type = static_cast<int>(ANIM_TYPE::WALK);
+	animController_->AddInFbx(type, 30.0f, type);
+
+	// HITアニメ
+	type = static_cast<int>(ANIM_TYPE::HIT);
+	animController_->AddInFbx(type, 20.0f, type);
+
+	// DEADアニメ
+	type = static_cast<int>(ANIM_TYPE::DIE);
+	animController_->AddInFbx(type, 30.0f, type);
 
 	animController_->Play(static_cast<int>(ANIM_TYPE::IDLE));
 }
 
 void EnemyRat::InitPost(void)
 {
+	EnemyBase::InitPost();
+
 	// 状態遷移初期処理登録
 	stateChanges_.emplace(static_cast<int>(STATE::NONE),
 		std::bind(&EnemyRat::ChangeStateNone, this));
@@ -77,6 +97,15 @@ void EnemyRat::InitPost(void)
 
 	stateChanges_.emplace(static_cast<int>(STATE::WANDER),
 		std::bind(&EnemyRat::ChangeStateWander, this));
+
+	stateChanges_.emplace(static_cast<int>(STATE::MOVE_IN_RANGE),
+		std::bind(&EnemyRat::ChangeStateMoveInRange, this));
+
+	stateChanges_.emplace(static_cast<int>(STATE::KNOCKBACK),
+		std::bind(&EnemyRat::ChangeStateKnockBack, this));
+
+	stateChanges_.emplace(static_cast<int>(STATE::DEAD),
+		std::bind(&EnemyRat::ChangeStateDead, this));
 
 	stateChanges_.emplace(static_cast<int>(STATE::END),
 		std::bind(&EnemyRat::ChangeStateEnd, this));
@@ -94,14 +123,10 @@ void EnemyRat::UpdateProcess(void)
 void EnemyRat::UpdateProcessPost(void)
 {
 	// 移動範囲外判定
-	if (!InMovableRange())
+	if (!InMovableRange()
+		&& !(IsInValidDamage() || state_ == STATE::MOVE_IN_RANGE))
 	{
-		// 移動前座標に戻す
-		transform_.pos = prevPos_;
-		transform_.Update();
-
-		// 思考状態に戻す
-		ChangeState(STATE::THINK);
+		ChangeState(STATE::MOVE_IN_RANGE);
 	}
 }
 
@@ -172,9 +197,70 @@ void EnemyRat::ChangeStateWander(void)
 		static_cast<int>(ANIM_TYPE::WALK), true);
 }
 
+void EnemyRat::ChangeStateMoveInRange(void)
+{
+	stateUpdate_ = std::bind(&EnemyRat::UpdateMoveInRange, this);
+
+	if (moveRadius_ <= 0.0f)
+	{
+		ChangeState(STATE::THINK);
+		return;
+	}
+
+	VECTOR dir = VSub(transform_.pos, defaultPos_);
+	dir.y = 0.0f;
+	if (SchoolUtility::SqrMagnitude(dir) <= SchoolUtility::kEpsilonNormalSqrt)
+	{
+		ChangeState(STATE::THINK);
+		return;
+	}
+
+	float safeRadius = moveRadius_ - MOVE_IN_RANGE_MARGIN;
+	if (safeRadius <= MOVE_IN_RANGE_ARRIVE_RADIUS)
+	{
+		safeRadius = moveRadius_ * 0.8f;
+	}
+
+	dir = VNorm(dir);
+	moveInRangeTargetPos_ = VAdd(defaultPos_, VScale(dir, safeRadius));
+	moveInRangeTargetPos_.y = transform_.pos.y;
+
+	moveSpeed_ = MOVE_IN_RANGE_SPEED;
+
+	// 歩きアニメーション再生
+	animController_->Play(
+		static_cast<int>(ANIM_TYPE::WALK), true);
+}
+
+void EnemyRat::ChangeStateKnockBack(void)
+{
+	stateUpdate_ = std::bind(&EnemyRat::UpdateKnockBack, this);
+
+	// 被ダメアニメーション再生
+	animController_->Play(
+		static_cast<int>(ANIM_TYPE::HIT), false);
+}
+void EnemyRat::ChangeStateDead(void)
+{
+	stateUpdate_ = std::bind(&EnemyRat::UpdateDead, this);
+
+	// 移動量ゼロ
+	movePow_ = SchoolUtility::VECTOR_ZERO;
+
+	// アニメーション終了後小さくする時間
+	step_ = DEAD_END_STEP;
+
+	// 撃破アニメーション再生
+	animController_->Play(
+		static_cast<int>(ANIM_TYPE::DIE), false);
+}
+
 void EnemyRat::ChangeStateEnd(void)
 {
 	stateUpdate_ = std::bind(&EnemyRat::UpdateEnd, this);
+
+	// 完全に非表示にする
+	Hide();
 }
 
 void EnemyRat::UpdateNone(void)
@@ -211,6 +297,87 @@ void EnemyRat::UpdateWander(void)
 	movePow_ = VScale(moveDir_, moveSpeed_);
 }
 
+void EnemyRat::UpdateMoveInRange(void)
+{
+	VECTOR targetDir = VSub(moveInRangeTargetPos_, transform_.pos);
+	targetDir.y = 0.0f;
+
+	float arriveRadius = MOVE_IN_RANGE_ARRIVE_RADIUS * MOVE_IN_RANGE_ARRIVE_RADIUS;
+	if (SchoolUtility::SqrMagnitude(targetDir) <= arriveRadius)
+	{
+		movePow_ = SchoolUtility::VECTOR_ZERO;
+		ChangeState(STATE::THINK);
+		return;
+	}
+
+	if (SchoolUtility::SqrMagnitude(targetDir) <= SchoolUtility::kEpsilonNormalSqrt)
+	{
+		movePow_ = SchoolUtility::VECTOR_ZERO;
+		ChangeState(STATE::THINK);
+		return;
+	}
+
+	moveDir_ = VNorm(targetDir);
+	movePow_ = VScale(moveDir_, moveSpeed_);
+}
+
+void EnemyRat::UpdateDead(void)
+{
+	step_ -= scnMng_.GetDeltaTime();
+
+	// アニメーション終了後、大きさを線形補間で小さくしていく
+	if (animController_->IsEnd())
+	{
+
+		// SchoolUtility::Lerpで大きさを小さくする
+		transform_.scl = SchoolUtility::Lerp(
+			transform_.scl,
+			SchoolUtility::VECTOR_ZERO, 0.1f);
+	}
+
+	if (VSize(transform_.scl) <= SchoolUtility::kEpsilonNormalSqrt)
+	{
+		// 終了状態へ移行
+		ChangeState(STATE::END);
+	}
+}
+
 void EnemyRat::UpdateEnd(void)
 {
+}
+
+bool EnemyRat::IsInValidDamage(void) const
+{
+	if (state_ == STATE::DEAD
+		|| state_ == STATE::KNOCKBACK
+		|| state_ == STATE::END)
+	{
+		return true;
+	}
+	return false;
+}
+
+void EnemyRat::OnStartKnockBack(void)
+{
+	// ノックバック状態へ移行
+	ChangeState(STATE::KNOCKBACK);
+}
+
+void EnemyRat::OnEndKnockBack(void)
+{
+	if (hp_ == 0)
+	{
+		// 死亡状態へ移行
+		ChangeState(STATE::DEAD);
+	}
+	else if (!InMovableRange())
+	{
+		// 移動範囲外なら、移動範囲内へ戻る状態へ移行
+		ChangeState(STATE::MOVE_IN_RANGE);
+	}
+	else
+	{
+		// それ以外は思考状態へ移行
+		ChangeState(STATE::THINK);
+	}
 }

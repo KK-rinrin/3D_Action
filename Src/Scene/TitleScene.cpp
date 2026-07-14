@@ -1,4 +1,5 @@
 #include <DxLib.h>
+#include <EffekseerForDXLib.h>
 #include "../Utility/SchoolUtility.h"
 #include "../Manager/InputManager.h"
 #include "../Manager/SceneManager.h"
@@ -70,6 +71,8 @@ void TitleScene::Init(void)
 	BlinkCounter_ = 0;
 	isPushStartDraw_ = true;
 
+	// エフェクト
+	LoadEffekseerEffect("Data/Effect/Test/Test.efkefc", 1.0f);
 }
 
 void TitleScene::Update(void)
@@ -119,6 +122,35 @@ void TitleScene::Draw(void)
 	MV1DrawModel(bigPlanet_.modelId);
 	MV1DrawModel(spherePlanet_.modelId);
 	MV1DrawModel(character_.modelId);
+
+	// エフェクト
+	auto& ins = InputManager::GetInstance();
+	if (ins.IsTrgDown(KEY_INPUT_A) && IsEffekseer3DEffectPlaying(effectFlamePlayId_) == -1)
+	{
+		// エフェクト再生
+		effectFlamePlayId_ = PlayEffekseer3DEffect(effectFlameResId_);
+		
+		// 大きさ
+		float SCL = 50.0f;
+		SetScalePlayingEffekseer3DEffect(effectFlamePlayId_, SCL, SCL, SCL);
+
+		// 回転
+		SetRotationPlayingEffekseer3DEffect(effectFlamePlayId_, 
+			0.0f, 0.0f, 0.0f);
+
+		// 位置
+		SetRotationPlayingEffekseer3DEffect(effectFlamePlayId_, 
+			0.0f, 0.0f, -200.0f);
+	}
+	//else
+	//{
+	//	// エフェクト停止
+	//	if (effectFlamePlayId_ != -1)
+	//	{
+	//		StopEffekseer3DEffect(effectFlamePlayId_);
+	//		effectFlamePlayId_ = -1;
+	//	}
+	//}
 
 	// UI描画
 	DrawRotaGraph(

@@ -104,3 +104,8 @@ void ActorBase::SetAllColliderValid(bool isValid)
 		own.second->SetValid(isValid);
 	}
 }
+
+void ActorBase::SetColliderValid(int key, bool isValid)
+{
+	ownColliders_.at(key)->SetValid(isValid);
+}

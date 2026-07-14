@@ -67,6 +67,14 @@ protected:
 	void UpdateProcess(void) override;
 	void UpdateProcessPost(void) override;
 
+	// ダメージ無効判定
+	bool IsInValidDamage(void) const override;
+
+	// ノックバック開始処理
+	void OnStartKnockBack(void) override;
+
+	// ノックバック終了処理
+	void OnEndKnockBack(void) override;
 private:
 	// モデルの大きさ
 	static constexpr float SCALE = 0.5f;
@@ -152,6 +160,7 @@ private:
 	static constexpr float CHASE_TIME = 13.0f;
 	// 追跡延長時間
 	static constexpr float CHASE_CONTINUE = 1.5f;
+
 
 	// ターゲットが入ったら近接攻撃を実行する範囲
 	static constexpr float ATTACK_RANGE = 180.0f;

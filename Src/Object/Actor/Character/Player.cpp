@@ -10,21 +10,10 @@
 #include "../Weapon/WeaponBlade.h"
 #include "Player.h"
 
-const float WEAPON_HIT_START[] =
-{
-	23.0f,	// VERTICAL_SLASH
-	25.0f,	// HORIZONTAL_SLASH
-	26.0f	// SPINNING_SLASH
-};
-
-const float WEAPON_HIT_END[] =
-{
-	27.0f,	// VERTICAL_SLASH
-	30.0f,	// HORIZONTAL_SLASH
-	34.0f	// SPINNING_SLASH
-};
-
 Player::Player()
+	:CharacterBase(),
+	weapon_(nullptr),
+	state_(STATE::NONE)
 {
 	
 }
@@ -126,6 +115,27 @@ void Player::InitAnimation(void)
 
 void Player::InitPost(void)
 {
+	// 攻撃コンボデータ
+	ATTACK_COMBO data = ATTACK_COMBO();
+
+	// 横切り攻撃(0.0～72.0)
+	// コンボ受付開始、衝突判定開始
+	data = { 15.0f, 50.0f, 24.0f, 38.0f, 55.0f, 8.0f, false };
+	atkComboData_.emplace(
+		STATE_ATTACK_COMBO::HORIZONTAL, data);
+
+	// 縦切り攻撃(0.0～68.0)
+	// コンボ受付開始、衝突判定開始
+	data = { 10.0f, 40.0f, 18.0f, 32.0f, 50.0f, 5.0f, false };
+	atkComboData_.emplace(
+		STATE_ATTACK_COMBO::VERTICAL, data);
+
+	// 回転攻撃
+	// コンボ受付開始、衝突判定開始
+	data = { 0.0f, 0.0f, 26.0f, 34.0f, 95.0f, 12.0f, false };
+	atkComboData_.emplace(
+		STATE_ATTACK_COMBO::SPINNING, data);
+
 	// 状態管理
 	stateChanges_.emplace(
 		STATE::NONE, std::bind(&Player::ChangeStateNone, this));
@@ -278,16 +288,19 @@ void Player::ProcessAttack(void)
 		ins.IsPadBtnTrgDown(
 			InputManager::JOYPAD_NO::PAD1, InputManager::JOYPAD_BTN::LEFT);
 
-	if (isHitKey || isTrgDownWhileAttack_)
+	if (isHitKey)	// 旧コードでは条件にこれを追加→ || isTrgDownWhileAttack_
 	{
-		// 連続攻撃回数を加算
-		attackChain_++;
+		// 連続攻撃回数を加算（旧式）
+		// attackChain_++;
+
+		// 最初の攻撃は横斬りから始める
+		stateAtkCombo_ = STATE_ATTACK_COMBO::HORIZONTAL;
 		ChangeState(STATE::ATTACK);
 		return;
 	}
 
-	// 連続攻撃記録をリセット
-	attackChain_ = 0;
+	// 連続攻撃記録をリセット（旧式）
+	// attackChain_ = 0;
 }
 
 void Player::ChangeState(STATE state)
@@ -311,6 +324,30 @@ void Player::ChangeStatePlay(void)
 void Player::ChangeStateAttack(void)
 {
 	stateUpdate_ = std::bind(&Player::UpdateAttack, this);
+
+	switch (stateAtkCombo_)
+	{
+	case Player::STATE_ATTACK_COMBO::HORIZONTAL:
+		// 横切りアニメーション再生
+		animController_->Play(
+			static_cast<int>(ANIM_TYPE::HORIZONTAL_SLASH), false);
+		break;
+	case Player::STATE_ATTACK_COMBO::VERTICAL:
+		// 縦切りアニメーション再生
+		animController_->Play(
+			static_cast<int>(ANIM_TYPE::VERTICAL_SLASH), false);
+		break;
+	case Player::STATE_ATTACK_COMBO::SPINNING:
+		// スピニングスラッシュアニメーション再生
+		animController_->Play(
+			static_cast<int>(ANIM_TYPE::SPINNING_SLASH), false);
+		break;
+	default:
+		break;
+	}
+
+#pragma region ～旧コード～
+#if 0
 	// 連続攻撃判定スタックを消す
 	isTrgDownWhileAttack_ = false;
 
@@ -330,6 +367,8 @@ void Player::ChangeStateAttack(void)
 		animController_->Play(
 			static_cast<int>(ANIM_TYPE::SPINNING_SLASH), false);
 	}
+#endif
+#pragma endregion
 }
 
 void Player::UpdateNone(void)
@@ -353,6 +392,66 @@ void Player::UpdateAttack(void)
 	// 移動量を徐々に減少
 	movePow_ = SchoolUtility::Lerp(movePow_, SchoolUtility::VECTOR_ZERO, 0.05f);
 
+	// コンボデータを取得
+	ATTACK_COMBO& data = atkComboData_.at(stateAtkCombo_);
+
+	// アニメーションの再生Stepを取得
+	float step = animController_->GetPlayAnim().step;
+
+	// 武器の衝突判定設定
+	weapon_->SetAllColliderValid(data.IsValidCollsion(step));
+
+	// コンボ判定
+	if (!data.isNextCombo)
+	{
+		bool isValidCombo = data.IsValidCombo(step);
+		if (isValidCombo)
+		{
+			auto& ins = InputManager::GetInstance();
+			// 攻撃ボタン
+			bool isHitKey = ins.IsTrgDown(KEY_INPUT_COLON)
+				|| ins.IsPadBtnTrgDown(
+					InputManager::JOYPAD_NO::PAD1,
+					InputManager::JOYPAD_BTN::LEFT);
+			data.isNextCombo = isHitKey;
+		}
+	}
+	// コンボ可能
+	if (data.isNextCombo)
+	{
+		// アニメーション終了か割り込み有効か
+		if (animController_->IsEnd() || data.IsValidInterrupt(step))
+		{
+			// 残りコンボ判定
+			int state = static_cast<int>(stateAtkCombo_);
+			state++;
+			int max = static_cast<int>(STATE_ATTACK_COMBO::MAX);
+			if (state < max)
+			{
+				// 次のコンボへ
+				stateAtkCombo_ = static_cast<STATE_ATTACK_COMBO>(state);
+				
+				ChangeStateAttack();
+				return;
+			}
+		}
+	}
+
+	// アニメーションの再生終了
+	if (animController_->IsEnd())
+	{
+		// コンボリセット
+		for (auto& data : atkComboData_)
+		{
+			data.second.isNextCombo = false;
+		}
+
+		ChangeState(STATE::PLAY);
+	}
+
+#pragma region ～旧コード～
+#if 0
+	// 攻撃アニメーションの再生ステップを取得
 	auto animStep = animController_->GetPlayAnim().step;
 
 	auto& ins = InputManager::GetInstance();
@@ -361,30 +460,31 @@ void Player::UpdateAttack(void)
 		animStep > animController_->GetPlayAnim().totalTime - BUTTON_WHILE_ATTACK_STEP)
 		isTrgDownWhileAttack_ = true;
 
+	// 攻撃アニメーションの種類を取得
 	int atkVar = attackChain_ % ATTACK_VARIOUS;
+	float start = 0.0f;
+	float end = 0.0f;
 
-	float start, end;
-	// フレーム
+	// 攻撃アニメーションの有効フレームを取得
 	if (isAttackAnim(animController_->GetPlayType())) {
 		auto frame = get(toAttackAnim(animController_->GetPlayType()));
 		start = frame.start;
 		end = frame.end;
 	}
-
+	
+	bool isValid = false;
+	// 攻撃アニメーションの有効フレーム内で武器のコライダを有効化
 	if (animStep >= start && animStep <= end)
-	{
-		weapon_->SetAllColliderValid(true);
-	}
-	else
-	{
-		weapon_->SetAllColliderValid(false);
-	}
+		isValid = true;
+	weapon_->SetAllColliderValid(isValid);
 
 	// アニメーションの再生終了
 	if (animController_->IsEnd())
 	{
 		ChangeState(STATE::PLAY);
 	}
+#endif
+#pragma endregion
 }
 
 void Player::CollisionReserve(void)

@@ -13,14 +13,20 @@ public:
 		THINK,
 		IDLE,
 		WANDER,
+		MOVE_IN_RANGE,
+		KNOCKBACK,
+		DEAD,
 		END
 	};
 
 	// アニメーション種別
 	enum class ANIM_TYPE
 	{
-		IDLE = 9,
+		DIE = 6,
+		HIT = 7,
+		IDLE = 8,
 		WALK = 13,
+
 	};
 
 	// コンストラクタ
@@ -42,6 +48,16 @@ protected:
 	// 更新系
 	void UpdateProcess(void) override;
 	void UpdateProcessPost(void) override;
+
+	// ダメージ無効判定
+	bool IsInValidDamage(void) const override;
+
+	// ノックバック開始処理
+	void OnStartKnockBack(void) override;
+
+	// ノックバック終了処理
+	void OnEndKnockBack(void) override;
+
 private:
 	// モデルの大きさ
 	static constexpr float SCALE = 0.5f;
@@ -64,11 +80,24 @@ private:
 	// 衝突判定用カプセル球体半径
 	static constexpr float COL_CAPSULE_RADIUS = 30.0f;
 
+	// 移動範囲内へ戻る速度
+	static constexpr float MOVE_IN_RANGE_SPEED = 4.0f;
+	// 移動範囲の境界から内側へ取る余裕
+	static constexpr float MOVE_IN_RANGE_MARGIN = 150.0f;
+	// 移動範囲内へ戻る目標への到着判定距離
+	static constexpr float MOVE_IN_RANGE_ARRIVE_RADIUS = 30.0f;
+
+	// 死亡後のアニメーション終了後に小さくなるまでの時間
+	static constexpr float DEAD_END_STEP = 1.0f;
+
 	// 状態
 	STATE state_;
 
 	// 更新ステップ
 	float step_;
+
+	// 移動範囲内へ戻る目標座標
+	VECTOR moveInRangeTargetPos_;
 
 	// 状態遷移
 	void ChangeState(STATE state);
@@ -76,6 +105,9 @@ private:
 	void ChangeStateThink(void);
 	void ChangeStateIdle(void);
 	void ChangeStateWander(void);
+	void ChangeStateMoveInRange(void);
+	void ChangeStateKnockBack(void);
+	void ChangeStateDead(void);
 	void ChangeStateEnd(void);
 
 	// 更新系
@@ -83,5 +115,9 @@ private:
 	void UpdateThink(void);
 	void UpdateIdle(void);
 	void UpdateWander(void);
+	void UpdateMoveInRange(void);
+	//void UpdateKnockBack(void);
+	void UpdateDead(void);
 	void UpdateEnd(void);
+
 };

@@ -29,14 +29,6 @@ public:
 		HORIZONTAL_SLASH,
 	};
 
-	enum class ATTACK_ANIM : int
-	{
-		VERTICAL_SLASH,
-		HORIZONTAL_SLASH,
-		SPINNING_SLASH,
-		MAX
-	};
-
 public:
 	Player();
 	~Player();
@@ -48,6 +40,59 @@ public:
 	WeaponBase* GetWeapon(void);
 
 private:
+#pragma region 自作旧コード（コンボ攻撃）
+#if 0
+	// ボタン連続攻撃判定許容ステップ
+	static constexpr float BUTTON_WHILE_ATTACK_STEP = 30.0f;
+	// 武器の振り方の種類
+	static constexpr int ATTACK_VARIOUS = 3;
+
+	// 攻撃中に攻撃ボタンを押した判定
+	bool isTrgDownWhileAttack_ = false;
+	// 連続攻撃判定
+	int attackChain_ = 0;
+
+	// 攻撃アニメーションの種類と連続攻撃の対応
+	constexpr bool isAttackAnim(int t)
+	{
+		ANIM_TYPE animType = static_cast<ANIM_TYPE>(t);
+		return animType == ANIM_TYPE::VERTICAL_SLASH ||
+			animType == ANIM_TYPE::HORIZONTAL_SLASH ||
+			animType == ANIM_TYPE::SPINNING_SLASH;
+	}
+
+	constexpr STATE_ATTACK_COMBO toAttackAnim(int t)
+	{
+		ANIM_TYPE animType = static_cast<ANIM_TYPE>(t);
+		switch (animType) {
+		case ANIM_TYPE::VERTICAL_SLASH:   return STATE_ATTACK_COMBO::VERTICAL;
+		case ANIM_TYPE::HORIZONTAL_SLASH: return STATE_ATTACK_COMBO::HORIZONTAL;
+		case ANIM_TYPE::SPINNING_SLASH:   return STATE_ATTACK_COMBO::SPINNING;
+		default:               return STATE_ATTACK_COMBO::VERTICAL; // 使われないけど一応
+		}
+	}
+	struct HitFrame
+	{
+		float start;
+		float end;
+	};
+	static constexpr size_t ATTACK_ANIM_MAX = static_cast<size_t>(STATE_ATTACK_COMBO::MAX);
+	static constexpr HitFrame hitFrames[ATTACK_ANIM_MAX] = {
+		HitFrame{23.0f, 27.0f}, // VERTICAL_SLASH
+		HitFrame{25.0f, 30.0f}, // HORIZONTAL_SLASH
+		HitFrame{26.0f, 34.0f}, // SPINNING_SLASH
+	};
+	std::map<ANIM_TYPE, int> comboIndex = {
+	{ ANIM_TYPE::HORIZONTAL_SLASH, 1 },	// 連続攻撃の1回目
+	{ ANIM_TYPE::VERTICAL_SLASH, 2 },	// 連続攻撃の2回目
+	{ ANIM_TYPE::SPINNING_SLASH, 0 },	// 連続攻撃の3回目
+	};
+	static constexpr HitFrame get(STATE_ATTACK_COMBO type) {
+		return hitFrames[static_cast<size_t>(type)];
+	}
+#endif
+#pragma endregion
+
 	// 移動速度(通常)
 	static constexpr float SPEED_MOVE = 5.0f;
 	// 移動速度(ダッシュ)
@@ -92,16 +137,64 @@ private:
 	static constexpr VECTOR COL_CAPSULE_DOWN_JUMP_LOCAL_POS =
 	{ 0.0f, 80.0f, 0.0f };
 
-	// ボタン連続攻撃判定許容ステップ
-	static constexpr float BUTTON_WHILE_ATTACK_STEP = 30.0f;
-	// 武器の振り方の種類
-	static constexpr int ATTACK_VARIOUS = 3;
+#pragma region コンボ攻撃
+	// 攻撃中方向補間率
+	static constexpr float ATTACK_DIR_LERP_RATE = 0.7f;
 
-	struct HitFrame
+	// 攻撃コンボ制御
+	struct ATTACK_COMBO
 	{
-		float start;
-		float end;
+		// コンボ受付開始ステップ
+		float stepInputStart = 0.0f;
+		// コンボ受付終了ステップ
+		float stepInputEnd = 0.0f;
+
+		// 衝突判定開始ステップ
+		float stepCollisionStart = 0.0f;
+		// 衝突判定終了ステップ
+		float stepCollisionEnd = 0.0f;
+
+		// アニメーション割り込みステップ
+		float stepInterrupt = 0.0f;
+		// 移動入力時の移動速度
+		float moveSpeed = 0.0f;
+		// 次のコンボに繋げるか
+		bool isNextCombo = false;
+
+		// コンボ受付有効ステップ
+		bool IsValidCombo(float step) const
+		{
+			return step > stepInputStart
+				&& step < stepInputEnd;
+		}
+
+		// 衝突判定有効ステップ
+		bool IsValidCollsion(float step) const
+		{
+			return step > stepCollisionStart
+				&& step < stepCollisionEnd;
+		}
+
+		// 割り込み有効ステップ
+		bool IsValidInterrupt(float step) const
+		{
+			return step > stepInterrupt;
+		}
 	};
+	// 攻撃コンボ状態
+	enum class STATE_ATTACK_COMBO
+	{
+		HORIZONTAL,
+		VERTICAL,
+		SPINNING,
+		MAX
+	};
+
+	// 攻撃コンボ状態管理
+	STATE_ATTACK_COMBO stateAtkCombo_;
+	// 攻撃コンボデータ
+	std::map<STATE_ATTACK_COMBO, ATTACK_COMBO> atkComboData_;
+#pragma endregion
 
 	void InitLoad(void) override;
 	void InitTransform(void) override;
@@ -125,11 +218,6 @@ private:
 	// 状態管理(更新ステップ)
 	std::function<void(void)> stateUpdate_;
 
-	// 攻撃中に攻撃ボタンを押した判定
-	bool isTrgDownWhileAttack_ = false;
-	// 連続攻撃判定
-	int attackChain_ = 0;
-
 	// 状態遷移
 	void ChangeState(STATE state);
 	void ChangeStateNone(void);
@@ -141,37 +229,6 @@ private:
 	void UpdatePlay(void);
 	void UpdateAttack(void);
 
-	// 攻撃アニメーションの種類と連続攻撃の対応
-	constexpr bool isAttackAnim(int t)
-	{
-		ANIM_TYPE animType = static_cast<ANIM_TYPE>(t);
-		return animType == ANIM_TYPE::VERTICAL_SLASH ||
-			animType == ANIM_TYPE::HORIZONTAL_SLASH ||
-			animType == ANIM_TYPE::SPINNING_SLASH;
-	}
-
-	constexpr ATTACK_ANIM toAttackAnim(int t)
-	{
-		ANIM_TYPE animType = static_cast<ANIM_TYPE>(t);
-		switch (animType) {
-		case ANIM_TYPE::VERTICAL_SLASH:   return ATTACK_ANIM::VERTICAL_SLASH;
-		case ANIM_TYPE::HORIZONTAL_SLASH: return ATTACK_ANIM::HORIZONTAL_SLASH;
-		case ANIM_TYPE::SPINNING_SLASH:   return ATTACK_ANIM::SPINNING_SLASH;
-		default:               return ATTACK_ANIM::VERTICAL_SLASH; // 使われないけど一応
-		}
-	}
-
-	static constexpr size_t ATTACK_ANIM_MAX = static_cast<size_t>(ATTACK_ANIM::MAX);
-	static constexpr HitFrame hitFrames[ATTACK_ANIM_MAX] = {
-		HitFrame{23.0f, 27.0f}, // VERTICAL_SLASH
-		HitFrame{25.0f, 30.0f}, // HORIZONTAL_SLASH
-		HitFrame{26.0f, 34.0f}, // SPINNING_SLASH
-	};
-
-	static constexpr HitFrame get(ATTACK_ANIM type) {
-		return hitFrames[static_cast<size_t>(type)];
-	}
-
 	// 衝突系
 	void CollisionReserve(void) override;			// 衝突準備
 	virtual void CollisionPost(void) override {};	// 衝突処理後
@@ -180,10 +237,4 @@ private:
 	void DrawDebug(void) override;
 
 	WeaponBlade* weapon_;
-
-	std::map<ANIM_TYPE, int> comboIndex = {
-	{ ANIM_TYPE::VERTICAL_SLASH, 1 },	// 連続攻撃の1回目
-	{ ANIM_TYPE::HORIZONTAL_SLASH, 2 },	// 連続攻撃の2回目
-	{ ANIM_TYPE::SPINNING_SLASH, 0 },	// 連続攻撃の3回目
-	};
 };

@@ -38,7 +38,6 @@ public:
 	void Release(void) override;
 
 private:
-
 	// タイトル画像のハンドル
 	int imgTitle_;
 
@@ -53,4 +52,12 @@ private:
 
 	Transform character_;
 	AnimationController* animController_;
+
+	// 炎エフェクトのリソースID
+	// ※エフェクトの再生に必要
+	int effectFlameResId_;
+
+	// 炎エフェクトのプレイID
+	// ※プレイ中のエフェクトを制御するために必要
+	int effectFlamePlayId_;
 };

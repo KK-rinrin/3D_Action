@@ -23,6 +23,7 @@ EnemyRobot::EnemyRobot(const EnemyBase::EnemyData& data)
 	nextWayPoint_(SchoolUtility::VECTOR_ZERO),
 	shootStep_(0.0f)
 {
+	knockBackParam_.weight = 120.0f;
 }
 
 EnemyRobot::~EnemyRobot(void)
@@ -33,6 +34,8 @@ EnemyRobot::~EnemyRobot(void)
 
 void EnemyRobot::Draw(void)
 {
+	if (!isVisible_) return;
+
 	// 基底クラスの描画処理
 	CharacterBase::Draw();
 
@@ -41,9 +44,12 @@ void EnemyRobot::Draw(void)
 	shots_->Draw();
 
 #pragma region 視野(円錐)の描画
-	SetUseLighting(FALSE);
-	MV1DrawModel(viewRangeTransform_.modelId);
-	SetUseLighting(TRUE);
+	if (state_ != STATE::DEAD && state_ != STATE::END)
+	{
+		SetUseLighting(FALSE);
+		MV1DrawModel(viewRangeTransform_.modelId);
+		SetUseLighting(TRUE);
+	}
 #pragma endregion
 
 #ifdef _DEBUG
@@ -136,6 +142,10 @@ void EnemyRobot::InitAnimation(void)
 	int type = -1;
 	type = static_cast<int>(ANIM_TYPE::DANCE);
 	animController_->AddInFbx(type, 10.0f, type);
+	type = static_cast<int>(ANIM_TYPE::DIE);
+	animController_->AddInFbx(type, 30.0f, type);
+	type = static_cast<int>(ANIM_TYPE::HIT);
+	animController_->AddInFbx(type, 20.0f, type);
 	type = static_cast<int>(ANIM_TYPE::IDLE);
 	animController_->AddInFbx(type, 20.0f, type);
 	type = static_cast<int>(ANIM_TYPE::WALK);
@@ -152,6 +162,8 @@ void EnemyRobot::InitAnimation(void)
 
 void EnemyRobot::InitPost(void)
 {
+	EnemyBase::InitPost();
+
 	// 状態遷移初期処理登録
 	stateChanges_.emplace(static_cast<int>(STATE::NONE),
 		std::bind(&EnemyRobot::ChangeStateNone, this));
@@ -215,6 +227,38 @@ void EnemyRobot::UpdateProcessPost(void)
 		transform_.quaRot.Mult(
 			Quaternion::AngleAxis(VIEW_RANGE_ROT_X, SchoolUtility::AXIS_X));
 	viewRangeTransform_.Update();
+}
+
+bool EnemyRobot::IsInValidDamage(void) const
+{
+	if (state_ == STATE::DEAD
+		|| state_ == STATE::KNOCKBACK
+		|| state_ == STATE::END)
+	{
+		return true;
+	}
+	return false;
+}
+
+void EnemyRobot::OnStartKnockBack(void)
+{
+	// ノックバック状態へ移行
+	ChangeState(STATE::KNOCKBACK);
+}
+
+void EnemyRobot::OnEndKnockBack(void)
+{
+	if (hp_ <= 0)
+	{
+		// 死亡状態へ移行
+		ChangeState(STATE::DEAD);
+	}
+	else
+	{
+		// 被ダメージ後は追跡状態へ移行
+		step_ = 0.0f;
+		ChangeState(STATE::CHASE);
+	}
 }
 
 void EnemyRobot::ChangeState(STATE state)
@@ -357,7 +401,7 @@ void EnemyRobot::ChangeStateChase(void)
 
 	// 遠距離攻撃開始までの時間
 	shootStep_ = 2.0f + static_cast<float>(GetRand(RAND_TIME)) / 100.0f;
-	
+
 	// 走るアニメーション再生
 	animController_->Play(static_cast<int>(ANIM_TYPE::RUN), true);
 
@@ -398,7 +442,7 @@ void EnemyRobot::ChangeStateAttackShoot(void)
 	// クールタイム
 	shootStep_ = ATTACK_COOLTIME;
 
-	shots_->SpawnShot(MV1GetFramePosition(transform_.modelId, SHOT_SYNC_FRAME_IDX), 
+	shots_->SpawnShot(MV1GetFramePosition(transform_.modelId, SHOT_SYNC_FRAME_IDX),
 		VScale(VNorm(moveDir_),SHOT_SPEED), SHOT_RADIUS);
 
 	// アニメーション再生
@@ -413,16 +457,32 @@ void EnemyRobot::ChangeStateEscape(void)
 void EnemyRobot::ChangeStateDead(void)
 {
 	stateUpdate_ = std::bind(&EnemyRobot::UpdateDead, this);
+
+	// 移動量ゼロ
+	movePow_ = SchoolUtility::VECTOR_ZERO;
+
+	// 視野判定を無効にする
+	SetColliderValid(static_cast<int>(COLLIDER_TYPE::CONE), false);
+
+
+	// 撃破アニメーション再生
+	animController_->Play(static_cast<int>(ANIM_TYPE::DIE), false);
 }
 
 void EnemyRobot::ChangeStateKnockBack(void)
 {
 	stateUpdate_ = std::bind(&EnemyRobot::UpdateKnockBack, this);
+
+	// 被ダメアニメーション再生
+	animController_->Play(static_cast<int>(ANIM_TYPE::HIT), false);
 }
 
 void EnemyRobot::ChangeStateEnd(void)
 {
 	stateUpdate_ = std::bind(&EnemyRobot::UpdateEnd, this);
+
+	// 完全に非表示にする
+	Hide();
 }
 
 void EnemyRobot::UpdateNone(void)
@@ -577,7 +637,7 @@ void EnemyRobot::UpdateChase(void)
 		movePow_ = SchoolUtility::VECTOR_ZERO;
 		return;
 	}
-	
+
 	// プレイヤーへの方向を適用
 	moveDir_ = VNorm(targetDir);
 
@@ -597,7 +657,7 @@ void EnemyRobot::UpdateAttackKick(void)
 
 		// 離れているなら再び追跡を開始する
 		else ChangeState(STATE::CHASE);
-		
+
 		return;
 	}
 
@@ -633,7 +693,7 @@ void EnemyRobot::UpdateAttackShoot(void)
 		return;
 	}
 
-	
+
 }
 
 void EnemyRobot::UpdateEscape(void)
@@ -642,10 +702,25 @@ void EnemyRobot::UpdateEscape(void)
 
 void EnemyRobot::UpdateDead(void)
 {
+
+	// アニメーション終了後、大きさを線形補間で小さくしていく
+	if (animController_->IsEnd())
+	{
+		transform_.scl = SchoolUtility::Lerp(
+			transform_.scl,
+			SchoolUtility::VECTOR_ZERO, 0.1f);
+	}
+
+	if (VSize(transform_.scl) <= SchoolUtility::kEpsilonNormalSqrt)
+	{
+		// 終了状態へ移行
+		ChangeState(STATE::END);
+	}
 }
 
 void EnemyRobot::UpdateKnockBack(void)
 {
+	EnemyBase::UpdateKnockBack();
 }
 
 void EnemyRobot::UpdateEnd(void)
