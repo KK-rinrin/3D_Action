@@ -105,6 +105,14 @@ void ActorBase::SetAllColliderValid(bool isValid)
 	}
 }
 
+void ActorBase::SetAllColliderKnockBackPow(float power)
+{
+	for (const auto& own : ownColliders_)
+	{
+		own.second->SetKnockBackPow(power);
+	}
+}
+
 void ActorBase::SetColliderValid(int key, bool isValid)
 {
 	ownColliders_.at(key)->SetValid(isValid);

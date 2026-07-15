@@ -8,6 +8,7 @@
 #include "ResourceManager.h"
 #include "SceneManager.h"
 #include "../Scene/DebugScene.h"
+#include "InputManager.h"
 
 SceneManager* SceneManager::instance_ = nullptr;
 
@@ -36,7 +37,7 @@ void SceneManager::Init(void)
 	fader_->Init();
 
 	// ƒJƒƒ‰
-	camera_ = new Camera();
+	camera_ = new Camera(InputManager::GetInstance().GetInputBinder(0));
 	camera_->Init();
 
 	// ‰æ–Ê‘JˆÚ’†”»’è

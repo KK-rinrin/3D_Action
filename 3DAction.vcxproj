@@ -20,6 +20,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Src\Manager\EnemyManager.cpp" />
+    <ClCompile Include="Src\Manager\InputBinder.cpp" />
     <ClCompile Include="Src\Object\Actor\Character\Enemy\EnemyBase.cpp" />
     <ClCompile Include="Src\Object\Actor\Character\Enemy\EnemyRat.cpp" />
     <ClCompile Include="Src\Object\Actor\Character\Enemy\EnemyRobot.cpp" />
@@ -64,6 +65,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Src\Manager\EnemyManager.h" />
+    <ClInclude Include="Src\Manager\InputBinder.h" />
     <ClInclude Include="Src\Object\Actor\Character\Enemy\EnemyBase.h" />
     <ClInclude Include="Src\Object\Actor\Character\Enemy\EnemyRat.h" />
     <ClInclude Include="Src\Object\Actor\Character\Enemy\EnemyRobot.h" />

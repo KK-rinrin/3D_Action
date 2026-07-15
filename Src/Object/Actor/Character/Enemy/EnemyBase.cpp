@@ -122,17 +122,16 @@ void EnemyBase::CollisionWeapon(void)
 
 		if (weaponCol->IsHit(colMyCap))
 		{
-			// ノックバック方向
-			VECTOR diff = VSub(
-				 weaponCol->GetCenter(),colMyCap->GetCenter());
+			if (weaponCol->GetKnockBackPow() > 0.0f)
+			{
+				VECTOR diff = VSub(
+					weaponCol->GetCenter(), colMyCap->GetCenter());
 
-			// ノックバック初期化
-			knockBackParam_.Init(diff, 3000.0f);
+				knockBackParam_.Init(
+					diff, 3000.0f * weaponCol->GetKnockBackPow());
 
-			// 派生クラスへのノックバック指示
-			OnStartKnockBack();
-
-			// ダメージ処理
+				OnStartKnockBack();
+			}
 			Damage(1);
 		}
 	}

@@ -2,6 +2,7 @@
 #include "../Application.h"
 #include "../Utility/SchoolUtility.h"
 #include "InputManager.h"
+#include "InputBinder.h"
 
 InputManager* InputManager::instance_ = nullptr;
 
@@ -69,6 +70,13 @@ void InputManager::Init(void)
 	info.keyTrgUp = false;
 	mouseInfos_.emplace(info.key, info);
 
+	// 入力バインダー
+	for (int i = 0; i < NUM_PLAYER; i++)
+	{
+		InputManager::JOYPAD_NO no = static_cast<InputManager::JOYPAD_NO>(i + 1);
+		inputBinder_[i] = new InputBinder(no);
+		inputBinder_[i]->Init();
+	}
 }
 
 void InputManager::Update(void)
@@ -102,6 +110,11 @@ void InputManager::Update(void)
 	SetJPadInState(JOYPAD_NO::PAD3);
 	SetJPadInState(JOYPAD_NO::PAD4);
 
+	// 入力バインダー更新
+	for (int i = 0; i < NUM_PLAYER; i++)
+	{
+		inputBinder_[i]->Update();
+	}
 }
 
 void InputManager::Destroy(void)
@@ -110,6 +123,12 @@ void InputManager::Destroy(void)
 	// キー情報のクリア
 	keyInfos_.clear();
 	mouseInfos_.clear();
+
+	// 入力バインダー更新
+	for (int i = 0; i < NUM_PLAYER; i++)
+	{
+		delete inputBinder_[i];
+	}
 
 	// インスタンスのメモリ解放
 	delete instance_;
@@ -422,4 +441,13 @@ VECTOR InputManager::GetDirectionXZAKey(int aKeyX, int aKeyY) const
 
 	return ret;
 
+}
+
+InputBinder* InputManager::GetInputBinder(int playerNo)
+{
+	if (playerNo >= 0 && playerNo < NUM_PLAYER)
+	{
+		return inputBinder_[playerNo];
+	}
+	return nullptr;
 }

@@ -144,7 +144,7 @@ void TitleScene::Draw(void)
 	}
 	//else
 	//{
-	//	// エフェクト停止
+	//	// エフェクト停止　※なくても大丈夫（？）
 	//	if (effectFlamePlayId_ != -1)
 	//	{
 	//		StopEffekseer3DEffect(effectFlamePlayId_);

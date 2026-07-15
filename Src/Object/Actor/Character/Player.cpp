@@ -2,7 +2,7 @@
 #include "../../../Application.h"
 #include "../../../Manager/ResourceManager.h"
 #include "../../../Manager/SceneManager.h"
-#include "../../../Manager/InputManager.h"
+#include "../../../Manager/InputBinder.h"
 #include "../../../Manager/Camera.h"
 #include "../../Common/AnimationController.h"
 #include "../../Collider/ColliderLine.h"
@@ -10,10 +10,40 @@
 #include "../Weapon/WeaponBlade.h"
 #include "Player.h"
 
-Player::Player()
+VECTOR Player::GetMoveInputDir(void)
+{
+	VECTOR inputDir = inputBinder_->GetDirection();
+
+	if (SchoolUtility::EqualsVZero(inputDir))
+	{
+		return SchoolUtility::VECTOR_ZERO;
+	}
+
+	// 移動方向をカメラの回転に合わせる
+	VECTOR camForward = SchoolUtility::DIR_F;
+	VECTOR camRight = SchoolUtility::DIR_R;
+	auto camera = SceneManager::GetInstance().GetCamera();
+	if (camera != nullptr)
+	{
+		camForward = camera->GetForward();
+		camRight = camera->GetQuaRotY().GetRight();
+	}
+
+	camForward.y = 0.0f;
+	camRight.y = 0.0f;
+	camForward = SchoolUtility::VNormalize(camForward);
+	camRight = SchoolUtility::VNormalize(camRight);
+
+	VECTOR dirX = VScale(camRight, inputDir.x);
+	VECTOR dirZ = VScale(camForward, inputDir.z);
+	return SchoolUtility::VNormalize(VAdd(dirX, dirZ));
+}
+
+Player::Player(InputBinder* inputBinder)
 	:CharacterBase(),
 	weapon_(nullptr),
-	state_(STATE::NONE)
+	state_(STATE::NONE),
+	inputBinder_(inputBinder)
 {
 	
 }
@@ -120,19 +150,19 @@ void Player::InitPost(void)
 
 	// 横切り攻撃(0.0～72.0)
 	// コンボ受付開始、衝突判定開始
-	data = { 15.0f, 50.0f, 24.0f, 38.0f, 55.0f, 8.0f, false };
+	data = { 15.0f, 50.0f, 24.0f, 38.0f, 55.0f, 8.0f, false, 0.0f };
 	atkComboData_.emplace(
 		STATE_ATTACK_COMBO::HORIZONTAL, data);
 
 	// 縦切り攻撃(0.0～68.0)
 	// コンボ受付開始、衝突判定開始
-	data = { 10.0f, 40.0f, 18.0f, 32.0f, 50.0f, 5.0f, false };
+	data = { 10.0f, 40.0f, 18.0f, 32.0f, 50.0f, 5.0f, false, 0.0f };
 	atkComboData_.emplace(
 		STATE_ATTACK_COMBO::VERTICAL, data);
 
 	// 回転攻撃
 	// コンボ受付開始、衝突判定開始
-	data = { 0.0f, 0.0f, 26.0f, 34.0f, 95.0f, 12.0f, false };
+	data = { 0.0f, 0.0f, 26.0f, 34.0f, 95.0f, 12.0f, false, 1.0f };
 	atkComboData_.emplace(
 		STATE_ATTACK_COMBO::SPINNING, data);
 
@@ -161,64 +191,15 @@ void Player::UpdateProcessPost(void)
 
 void Player::ProcessMove(void)
 {
-	// カメラの向きに応じた移動方向の取得（拡張しやすい形に整理）
-	// 入力の取得
-	InputManager& ins = InputManager::GetInstance();
-	bool isDash = false;
-	moveDir_ = SchoolUtility::VECTOR_ZERO;
+	bool isDash = inputBinder_->IsDash();
+	moveDir_ = GetMoveInputDir();
 
-	if (GetJoypadNum() == 0)
-	{
-		if (ins.IsNew(KEY_INPUT_W)) { moveDir_ = SchoolUtility::DIR_F; }
-		if (ins.IsNew(KEY_INPUT_S)) { moveDir_ = SchoolUtility::DIR_B; }
-		if (ins.IsNew(KEY_INPUT_A)) { moveDir_ = SchoolUtility::DIR_L; }
-		if (ins.IsNew(KEY_INPUT_D)) { moveDir_ = SchoolUtility::DIR_R; }
-		if (ins.IsNew(KEY_INPUT_RSHIFT)) { isDash = true; }
-
-	}
-	else
-	{
-		// 接続されているゲームパッド１の情報を取得
-		InputManager::JOYPAD_IN_STATE padState = ins.GetJPadInputState(InputManager::JOYPAD_NO::PAD1);
-		VECTOR pad1dir = ins.GetDirectionXZAKey(padState.AKeyLX, padState.AKeyLY);
-
-		moveDir_.x += pad1dir.x;
-		moveDir_.z += pad1dir.z;
-		if (ins.IsPadBtnNew(InputManager::JOYPAD_NO::PAD1, InputManager::JOYPAD_BTN::R_TRIGGER))
-		{ isDash = true; }
-	}
-	// カメラ基底を SceneManager 経由で取得（存在しない場合はワールド基準を使う）
-	VECTOR camForward = SchoolUtility::DIR_F; // フォールバック前方
-	VECTOR camRight = SchoolUtility::DIR_R;   // フォールバック右
-	auto camera = SceneManager::GetInstance().GetCamera();
-	if (camera != nullptr)
-	{
-		// カメラ前方向（注視点方向）
-		camForward = camera->GetForward();
-		// カメラの Y 回転のみの回転から右方向を取得（Y回転だけにすることでXZ平面の右方向を得る）
-		camRight = camera->GetQuaRotY().GetRight();
-	}
-
-	// XZ 平面に射影して正規化（カメラが傾いていても XZ の進行方向のみを使うため）
-	camForward.y = 0.0f;
-	camRight.y = 0.0f;
-	camForward = SchoolUtility::VNormalize(camForward);
-	camRight = SchoolUtility::VNormalize(camRight);
-
+	isDash_ = isDash && !SchoolUtility::EqualsVZero(moveDir_);
 
 	if (!SchoolUtility::EqualsVZero(moveDir_))
 	{
-		// カメラ右方向 * inX + カメラ前方向 * inZ
-		VECTOR dirX = VScale(camRight, moveDir_.x);
-		VECTOR dirZ = VScale(camForward, moveDir_.z);
-		moveDir_ = VAdd(dirX, dirZ);
-		// 正規化して方向のみを保持
-		moveDir_ = SchoolUtility::VNormalize(moveDir_);
-
-		// 移動中
 		moveSpeed_ = isDash ? SPEED_DASH : SPEED_MOVE;
 
-		// ジャンプ中はアニメーションを変えない
 		if (!isJump_)
 		{
 			animController_->Play(static_cast<int>(isDash ? ANIM_TYPE::FAST_RUN : ANIM_TYPE::RUN));
@@ -226,24 +207,18 @@ void Player::ProcessMove(void)
 	}
 	else
 	{
-		// 停止中
 		moveSpeed_ = 0.0f;
 		if (!isJump_) animController_->Play(static_cast<int>(ANIM_TYPE::IDLE));
 		moveDir_ = SchoolUtility::VECTOR_ZERO;
 	}
 
-	// 移動量の計算（既存のフローに合わせ速度のみ使用）
 	movePow_ = VScale(moveDir_, moveSpeed_);
 }
 
 void Player::ProcessJump(void)
 {
-	auto& ins = InputManager::GetInstance();
 	// 持続ジャンプ処理
-	bool isHitKeyNew = ins.IsNew(KEY_INPUT_BACKSLASH)
-		|| ins.IsPadBtnNew(
-			InputManager::JOYPAD_NO::PAD1, InputManager::JOYPAD_BTN::DOWN);
-	if (isHitKeyNew)
+	if (inputBinder_->IsJump())
 	{
 		// ジャンプの入力受付時間を減少
 		stepJump_ += scnMng_.GetDeltaTime();
@@ -259,12 +234,9 @@ void Player::ProcessJump(void)
 		// ボタンを離したらジャンプ力に加算しない
 		stepJump_ = TIME_JUMP_INPUT;
 	}
+
 	// 初期ジャンプ処理
-	bool isHitKey = ins.IsTrgDown(KEY_INPUT_BACKSLASH)
-		|| ins.IsPadBtnTrgDown(
-			InputManager::JOYPAD_NO::PAD1, InputManager::JOYPAD_BTN::DOWN);
-	// ジャンプ
-	if (isHitKey && !isJump_)
+	if (inputBinder_->IsTrgJump() && !isJump_)
 	{
 		// ジャンプ量の計算
 		float jumpSpeed = POW_JUMP_INIT * scnMng_.GetDeltaTime();
@@ -281,12 +253,8 @@ void Player::ProcessAttack(void)
 	// ジャンプ中は攻撃できない
 	if (isJump_) return;
 
-	auto& ins = InputManager::GetInstance();
-
 	// 攻撃ボタン
-	bool isHitKey = ins.IsTrgDown(KEY_INPUT_COLON) || ins.IsTrgDown(KEY_INPUT_X) || 
-		ins.IsPadBtnTrgDown(
-			InputManager::JOYPAD_NO::PAD1, InputManager::JOYPAD_BTN::LEFT);
+	bool isHitKey = inputBinder_->IsAttack();
 
 	if (isHitKey)	// 旧コードでは条件にこれを追加→ || isTrgDownWhileAttack_
 	{
@@ -324,6 +292,24 @@ void Player::ChangeStatePlay(void)
 void Player::ChangeStateAttack(void)
 {
 	stateUpdate_ = std::bind(&Player::UpdateAttack, this);
+
+	const ATTACK_COMBO& data = atkComboData_.at(stateAtkCombo_);	// コンボデータを取得
+	weapon_->SetAllColliderKnockBackPow(data.knockBackPow);
+	VECTOR inputDir = GetMoveInputDir();	// 移動
+	if (!SchoolUtility::EqualsVZero(inputDir))
+	{
+		VECTOR blendedDir = SchoolUtility::Lerp(
+			moveDir_, inputDir, ATTACK_DIR_LERP_RATE);
+		moveDir_ = SchoolUtility::VNormalize(blendedDir);
+		moveSpeed_ = data.moveSpeed + (isDash_ ? SPEED_DASH * ATTACK_DASH_MOVE_DECAY : 0.0f);
+		movePow_ = VScale(moveDir_, moveSpeed_);
+	}
+	else
+	{
+		moveDir_ = SchoolUtility::VECTOR_ZERO;
+		moveSpeed_ = 0.0f;
+		movePow_ = SchoolUtility::VECTOR_ZERO;
+	}
 
 	switch (stateAtkCombo_)
 	{
@@ -407,13 +393,8 @@ void Player::UpdateAttack(void)
 		bool isValidCombo = data.IsValidCombo(step);
 		if (isValidCombo)
 		{
-			auto& ins = InputManager::GetInstance();
 			// 攻撃ボタン
-			bool isHitKey = ins.IsTrgDown(KEY_INPUT_COLON)
-				|| ins.IsPadBtnTrgDown(
-					InputManager::JOYPAD_NO::PAD1,
-					InputManager::JOYPAD_BTN::LEFT);
-			data.isNextCombo = isHitKey;
+			data.isNextCombo = inputBinder_->IsAttack();
 		}
 	}
 	// コンボ可能
@@ -450,6 +431,7 @@ void Player::UpdateAttack(void)
 	}
 
 #pragma region ～旧コード～
+	// InputManagerで動作するため、このまま有効にしたらコンパイルエラーになります
 #if 0
 	// 攻撃アニメーションの再生ステップを取得
 	auto animStep = animController_->GetPlayAnim().step;
@@ -534,15 +516,6 @@ void Player::CollisionReserve(void)
 
 void Player::DrawDebug(void)
 {
-	int a = static_cast<int>(state_);
-
-	auto& ins = InputManager::GetInstance();
-	int b = static_cast<int>(ins.IsTrgDown(KEY_INPUT_COLON) || 
-		ins.IsPadBtnTrgDown(
-			InputManager::JOYPAD_NO::PAD1, InputManager::JOYPAD_BTN::LEFT));
-
 	DrawFormatString(10, 10, GetColor(255, 255, 255), "プレイヤー座標：\n X=%.2f\nY=%.2f\nZ=%.2f",
 		transform_.pos.x, transform_.pos.y, transform_.pos.z);
-
-
 }

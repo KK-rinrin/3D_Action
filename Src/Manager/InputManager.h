@@ -4,6 +4,8 @@
 #include <Dxlib.h>
 #include "../Common/Vector2.h"
 
+class InputBinder;
+
 class InputManager
 {
 
@@ -14,6 +16,9 @@ public:
 
 	// アナログキーの入力受付しきい値(0.0～1.0)
 	static constexpr float THRESHOLD = 0.35f;
+
+	// プレイ人数
+	static constexpr int NUM_PLAYER = 4;
 
 	// ゲームコントローラーの認識番号
 	// DxLib定数、DX_INPUT_PAD1等に対応
@@ -128,6 +133,9 @@ public:
 	// アナログキーの入力値から方向(正規化済み)を取得
 	VECTOR GetDirectionXZAKey(int aKeyX, int aKeyY) const;
 
+	// 入力バインダーの取得
+	InputBinder* GetInputBinder(int playerNo);
+
 private:
 
 	// キー情報
@@ -175,6 +183,9 @@ private:
 
 	// パッド情報
 	JOYPAD_IN_STATE padInfos_[5];
+
+	// 入力制御バインダー
+	InputBinder* inputBinder_[NUM_PLAYER];
 
 	// デフォルトコンストラクタをprivateにして、
 	// 外部から生成できない様にする

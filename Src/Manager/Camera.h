@@ -4,6 +4,7 @@
 #include "../Object/Actor/ActorBase.h"
 class Transform;
 class ColliderSphere;
+class InputBinder;
 
 class Camera : public ActorBase
 {
@@ -55,10 +56,13 @@ public:
 	};
 
 	// コンストラクタ
-	Camera(void);
+	Camera(InputBinder* inputBinder);
 
 	// デストラクタ
 	~Camera(void) override;
+
+	// 入力判定クラスを取得
+	void SetInputBinder(InputBinder* inputBinder) { inputBinder_ = inputBinder; }
 
 	// 更新
 	void Update(void) override;
@@ -114,6 +118,9 @@ private:
 	// カメラが追従対象とするTransform
 	const Transform* followTransform_;
 
+	// 入力バインダー
+	InputBinder* inputBinder_;
+
 	// カメラモード
 	MODE mode_;
 
@@ -135,12 +142,6 @@ private:
 	// カメラ操作
 	void ProcessRot(bool isLimit);
 	void ProcessMove(void);
-
-	// カメラ回転(キーボード)
-	void RotKeyboard(bool isLimit);
-
-	// カメラ回転(ゲームパッド)
-	void RotGamePad(bool isLimit);
 
 	// モード別更新ステップ
 	void SetBeforeDrawFixedPoint(void);

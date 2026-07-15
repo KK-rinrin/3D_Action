@@ -5,7 +5,8 @@ ColliderBase::ColliderBase(SHAPE shape, TAG tag, const Transform* follow)
 	shape_(shape),
 	tag_(tag),
 	follow_(follow),
-	isValid_(true)
+	isValid_(true),
+	knockBackPow_(0.0f)
 {
 }
 

@@ -47,6 +47,7 @@ public:
 	void ClearHitCollider(void);
 	// 衝突コライダの有効無効設定
 	void SetAllColliderValid(bool isValid);
+	void SetAllColliderKnockBackPow(float power);
 	// 衝突コライダの個別有効無効設定
 	void SetColliderValid(int key, bool isValid);
 protected:

@@ -1,20 +1,21 @@
 #include <DxLib.h>
 #include <EffekseerForDXLib.h>
 #include "../Utility/SchoolUtility.h"
-#include "../Manager/InputManager.h"
+#include "../Manager/InputBinder.h"
 #include "../Object/Common/Transform.h"
 #include "Camera.h"
 #include "../Object/Collider/ColliderModel.h"
 #include "../Object/Collider/ColliderSphere.h"
 
-Camera::Camera(void)
+Camera::Camera(InputBinder* inputBinder)
 	:
 	followTransform_(nullptr),
 	mode_(MODE::NONE),
 	angles_(SchoolUtility::VECTOR_ZERO),
 	rotY_(Quaternion::Identity()),
 	targetPos_(SchoolUtility::VECTOR_ZERO),
-	prePos_(SchoolUtility::VECTOR_ZERO)
+	prePos_(SchoolUtility::VECTOR_ZERO),
+	inputBinder_(inputBinder)
 {
 	// DxLibの初期設定では、
 	// カメラの位置が x = 320.0f, y = 240.0f, z = (画面のサイズによって変化)、
@@ -172,25 +173,21 @@ void Camera::SyncFollow(void)
 
 void Camera::ProcessRot(bool isLimit)
 {
+	angles_ = inputBinder_->GetRotPowCamera();
 
-	if (GetJoypadNum() == 0)
+	// 角度制限
+	if (isLimit && angles_.x < -LIMIT_X_DW_RAD)
 	{
-		// 方向回転によるXYZの移動(キーボード)
-		RotKeyboard(isLimit);
+		angles_.x = -LIMIT_X_DW_RAD;
 	}
-	else
+	if (isLimit && angles_.x > LIMIT_X_UP_RAD)
 	{
-		// 方向回転によるXYZの移動(ゲームパッド)
-		RotGamePad(isLimit);
+		angles_.x = LIMIT_X_UP_RAD;
 	}
-
 }
 
 void Camera::ProcessMove(void)
 {
-
-	auto& ins = InputManager::GetInstance();
-
 	VECTOR moveDir = SchoolUtility::VECTOR_ZERO;
 
 	if (GetJoypadNum() == 0)
@@ -276,75 +273,6 @@ void Camera::SetBeforeDrawFollow(void)
 
 	// y位置だけ補間しない
 	transform_.pos.y = y;
-}
-
-void Camera::RotKeyboard(bool isLimit)
-{
-
-	const auto& ins = InputManager::GetInstance();
-
-	// カメラ回転
-	if (ins.IsNew(KEY_INPUT_RIGHT))
-	{
-		// 右回転
-		angles_.y += ROT_POW_RAD;
-	}
-	if (ins.IsNew(KEY_INPUT_LEFT))
-	{
-		// 左回転
-		angles_.y -= ROT_POW_RAD;
-	}
-
-	// 上回転
-	if (ins.IsNew(KEY_INPUT_UP))
-	{
-		angles_.x += ROT_POW_RAD;
-		if (isLimit && angles_.x > LIMIT_X_UP_RAD)
-		{
-			angles_.x = LIMIT_X_UP_RAD;
-		}
-	}
-
-	// 下回転
-	if (ins.IsNew(KEY_INPUT_DOWN))
-	{
-		angles_.x -= ROT_POW_RAD;
-		if (isLimit && angles_.x < -LIMIT_X_DW_RAD)
-		{
-			angles_.x = -LIMIT_X_DW_RAD;
-		}
-	}
-
-}
-
-void Camera::RotGamePad(bool isLimit)
-{
-
-	auto& ins = InputManager::GetInstance();
-
-	// 接続されているゲームパッド１の情報を取得
-	InputManager::JOYPAD_IN_STATE padState =
-		ins.GetJPadInputState(InputManager::JOYPAD_NO::PAD1);
-
-	// 右スティックの傾き
-	VECTOR dir = ins.GetDirectionXZAKey(padState.AKeyRX, padState.AKeyRY);
-
-	// 右スティック左右の傾き
-	angles_.y += dir.x * ROT_POW_RAD;
-
-	// 右スティック上下の傾き
-	angles_.x += dir.z * ROT_POW_RAD;
-	
-	// 角度制限
-	if (isLimit && angles_.x < -LIMIT_X_DW_RAD)
-	{
-		angles_.x = -LIMIT_X_DW_RAD;
-	}
-	if (isLimit && angles_.x > LIMIT_X_UP_RAD)
-	{
-		angles_.x = LIMIT_X_UP_RAD;
-	}
-
 }
 
 void Camera::InitLoad()

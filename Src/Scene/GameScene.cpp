@@ -28,13 +28,16 @@ GameScene::~GameScene(void)
 
 void GameScene::Init(void)
 {
+	auto* binder = InputManager::GetInstance().GetInputBinder(0);
+
 	if (!stage_) stage_ = new Stage();
 	stage_->Init();
 
 	if (!skyDome_) skyDome_ = new SkyDome();
 	skyDome_->Init();
 
-	if (!player_) player_ = new Player();
+	if (!player_) player_ = new Player(
+		binder);
 	player_->Init();
 
 	if (!enemy_) enemy_ = new EnemyManager();
@@ -46,6 +49,7 @@ void GameScene::Init(void)
 	// カメラモード
 	sceMng_.GetCamera()->SetFollow(&player_->GetTransform());
 	sceMng_.GetCamera()->ChangeMode(Camera::MODE::FOLLOW);
+	sceMng_.GetCamera()->SetInputBinder(binder);
 
 	// ステージモデルのコライダーをプレイヤーに登録
 	const ColliderBase* stageCollider =
