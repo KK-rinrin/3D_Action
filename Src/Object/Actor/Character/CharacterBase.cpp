@@ -139,35 +139,49 @@ void CharacterBase::Collision(void)
 }
 void CharacterBase::CollisionGravity(void)
 {
+	// このフレームで着地したか判定をリセット
+	isTrgLanding_ = false;
+
 	// 線分コライダ
 	int lineType = static_cast<int>(COLLIDER_TYPE::LINE);
 	// 線分コライダが無ければ処理を抜ける
 	if (ownColliders_.count(lineType) == 0) return;
 	
-		// 線分コライダ情報
-		ColliderLine* colliderLine =
-			dynamic_cast<ColliderLine*>(ownColliders_.at(lineType));
-		if (colliderLine == nullptr) return;
-		// 線分の始点と終点を取得
-		// 登録されている衝突物を全てチェック
-		for (const auto& hitCol : hitColliders_)
+	// 線分コライダ情報
+	ColliderLine* colliderLine =
+		dynamic_cast<ColliderLine*>(ownColliders_.at(lineType));
+	if (colliderLine == nullptr) return;
+	// 線分の始点と終点を取得
+	// 登録されている衝突物を全てチェック
+	bool isHit = false;
+	for (const auto& hitCol : hitColliders_)
+	{
+		// 落下中しか判定しない
+		if (!(VDot(SchoolUtility::DIR_D, jumpPow_) > 0.9f)) continue;
+
+		// ステージ以外は処理を飛ばす
+		if (hitCol->GetTag() != ColliderBase::TAG::STAGE) continue;
+
+		// 派生クラスへキャスト
+		const ColliderModel* colliderModel =
+			dynamic_cast<const ColliderModel*>(hitCol);
+
+		if (colliderModel == nullptr) continue;
+
+		// 衝突したポリゴンの法線方向に押し戻す
+		if (colliderLine->PushBack(colliderModel, transform_, COLLISION_BACK_DIS, SchoolUtility::DIR_U, true, false))
+			isHit = true;
+	}
+
+	if (isHit)
+	{
+		if (isJump_)
 		{
-			// 落下中しか判定しない
-			if (!(VDot(SchoolUtility::DIR_D, jumpPow_) > 0.9f)) continue;
-
-			// ステージ以外は処理を飛ばす
-			if (hitCol->GetTag() != ColliderBase::TAG::STAGE) continue;
-
-			// 派生クラスへキャスト
-			const ColliderModel* colliderModel =
-				dynamic_cast<const ColliderModel*>(hitCol);
-
-			if (colliderModel == nullptr) continue;
-
-			// 衝突したポリゴンの法線方向に押し戻す
-			if (colliderLine->PushBack(colliderModel, transform_, COLLISION_BACK_DIS, SchoolUtility::DIR_U ,true, false))
-				isJump_ = false;
+			// ジャンプ中に着地したら
+			isTrgLanding_ = true;
 		}
+		isJump_ = false;
+	}
 
 	if (!isJump_)
 	{
@@ -308,4 +322,3 @@ void CharacterBase::DrawShadow(void)
 	// Ｚバッファを無効にする
 	SetUseZBuffer3D(FALSE);
 }
-

@@ -104,6 +104,9 @@ void EnemyRat::InitPost(void)
 	stateChanges_.emplace(static_cast<int>(STATE::KNOCKBACK),
 		std::bind(&EnemyRat::ChangeStateKnockBack, this));
 
+	stateChanges_.emplace(static_cast<int>(STATE::DAMAGED),
+		std::bind(&EnemyRat::ChangeStateDamaged, this));
+
 	stateChanges_.emplace(static_cast<int>(STATE::DEAD),
 		std::bind(&EnemyRat::ChangeStateDead, this));
 
@@ -126,7 +129,7 @@ void EnemyRat::UpdateProcessPost(void)
 	if (!InMovableRange()
 		&& !(IsInValidDamage() || state_ == STATE::MOVE_IN_RANGE))
 	{
-		ChangeState(STATE::MOVE_IN_RANGE);
+		ChangeState(STATE::THINK);
 	}
 }
 
@@ -146,6 +149,12 @@ void EnemyRat::ChangeStateNone(void)
 void EnemyRat::ChangeStateThink(void)
 {
 	stateUpdate_ = std::bind(&EnemyRat::UpdateThink, this);
+
+	if (!InMovableRange())
+	{
+		ChangeState(STATE::MOVE_IN_RANGE);
+		return;
+	}
 
 	// 思考
 	// ランダムに次の行動を決定
@@ -240,6 +249,17 @@ void EnemyRat::ChangeStateKnockBack(void)
 	animController_->Play(
 		static_cast<int>(ANIM_TYPE::HIT), false);
 }
+
+void EnemyRat::ChangeStateDamaged(void)
+{
+	stateUpdate_ = std::bind(&EnemyRat::UpdateDamaged, this);
+
+	movePow_ = SchoolUtility::VECTOR_ZERO;
+
+	animTypeDamaged_ = static_cast<int>(ANIM_TYPE::HIT);
+	animController_->Play(animTypeDamaged_, false);
+}
+
 void EnemyRat::ChangeStateDead(void)
 {
 	stateUpdate_ = std::bind(&EnemyRat::UpdateDead, this);
@@ -326,7 +346,7 @@ void EnemyRat::UpdateDead(void)
 	step_ -= scnMng_.GetDeltaTime();
 
 	// アニメーション終了後、大きさを線形補間で小さくしていく
-	if (animController_->IsEnd())
+	if (animController_->IsEnd(static_cast<int>(ANIM_TYPE::DIE)))
 	{
 
 		// SchoolUtility::Lerpで大きさを小さくする
@@ -350,6 +370,7 @@ bool EnemyRat::IsInValidDamage(void) const
 {
 	if (state_ == STATE::DEAD
 		|| state_ == STATE::KNOCKBACK
+		|| state_ == STATE::DAMAGED
 		|| state_ == STATE::END)
 	{
 		return true;
@@ -370,14 +391,29 @@ void EnemyRat::OnEndKnockBack(void)
 		// 死亡状態へ移行
 		ChangeState(STATE::DEAD);
 	}
-	else if (!InMovableRange())
+	else if (knockBackParam_.step <= DAMAGED_KNOCKBACK_TIME)
 	{
-		// 移動範囲外なら、移動範囲内へ戻る状態へ移行
-		ChangeState(STATE::MOVE_IN_RANGE);
+		StartDamaged();
 	}
 	else
 	{
-		// それ以外は思考状態へ移行
+		ChangeState(STATE::THINK);
+	}
+}
+
+void EnemyRat::OnStartDamaged(void)
+{
+	ChangeState(STATE::DAMAGED);
+}
+
+void EnemyRat::OnEndDamaged(void)
+{
+	if (hp_ == 0)
+	{
+		ChangeState(STATE::DEAD);
+	}
+	else
+	{
 		ChangeState(STATE::THINK);
 	}
 }

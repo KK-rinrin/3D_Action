@@ -23,6 +23,7 @@ public:
 		ESCAPE,
 		DEAD,
 		KNOCKBACK,
+		DAMAGED,
 		END
 	};
 
@@ -75,6 +76,8 @@ protected:
 
 	// ノックバック終了処理
 	void OnEndKnockBack(void) override;
+	void OnStartDamaged(void) override;
+	void OnEndDamaged(void) override;
 private:
 	// モデルの大きさ
 	static constexpr float SCALE = 0.5f;
@@ -220,6 +223,7 @@ private:
 	void ChangeStateEscape(void);		
 	void ChangeStateDead(void);			// 死亡状態
 	void ChangeStateKnockBack(void);	
+	void ChangeStateDamaged(void);
 	void ChangeStateEnd(void);			
 
 	// 更新系

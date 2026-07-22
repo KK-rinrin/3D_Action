@@ -117,3 +117,8 @@ void ActorBase::SetColliderValid(int key, bool isValid)
 {
 	ownColliders_.at(key)->SetValid(isValid);
 }
+
+void ActorBase::SetColliderKnockBackPow(int colliderKey, float knockBackPow)
+{
+	ownColliders_.at(colliderKey)->SetKnockBackPow(knockBackPow);
+}

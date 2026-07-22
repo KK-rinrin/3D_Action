@@ -43,13 +43,20 @@ public:
 
 	// 衝突対象となるコライダを登録
 	void AddHitCollider(const ColliderBase* hitCollider);
+
 	// 衝突対象となるコライダをクリア
 	void ClearHitCollider(void);
+
 	// 衝突コライダの有効無効設定
 	void SetAllColliderValid(bool isValid);
 	void SetAllColliderKnockBackPow(float power);
+
 	// 衝突コライダの個別有効無効設定
 	void SetColliderValid(int key, bool isValid);
+
+	// Set knockback power for a specific owned collider.
+	void SetColliderKnockBackPow(int colliderKey, float knockBackPow);
+
 protected:
 
 	// シングルトン参照

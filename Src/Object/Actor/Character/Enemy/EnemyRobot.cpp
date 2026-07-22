@@ -189,6 +189,8 @@ void EnemyRobot::InitPost(void)
 		std::bind(&EnemyRobot::ChangeStateDead, this));
 	stateChanges_.emplace(static_cast<int>(STATE::KNOCKBACK),
 		std::bind(&EnemyRobot::ChangeStateKnockBack, this));
+	stateChanges_.emplace(static_cast<int>(STATE::DAMAGED),
+		std::bind(&EnemyRobot::ChangeStateDamaged, this));
 	stateChanges_.emplace(static_cast<int>(STATE::END),
 		std::bind(&EnemyRobot::ChangeStateEnd, this));
 
@@ -233,6 +235,7 @@ bool EnemyRobot::IsInValidDamage(void) const
 {
 	if (state_ == STATE::DEAD
 		|| state_ == STATE::KNOCKBACK
+		|| state_ == STATE::DAMAGED
 		|| state_ == STATE::END)
 	{
 		return true;
@@ -253,9 +256,31 @@ void EnemyRobot::OnEndKnockBack(void)
 		// 死亡状態へ移行
 		ChangeState(STATE::DEAD);
 	}
+	else if (knockBackParam_.step <= DAMAGED_KNOCKBACK_TIME)
+	{
+		StartDamaged();
+	}
 	else
 	{
 		// 被ダメージ後は追跡状態へ移行
+		step_ = 0.0f;
+		ChangeState(STATE::CHASE);
+	}
+}
+
+void EnemyRobot::OnStartDamaged(void)
+{
+	ChangeState(STATE::DAMAGED);
+}
+
+void EnemyRobot::OnEndDamaged(void)
+{
+	if (hp_ <= 0)
+	{
+		ChangeState(STATE::DEAD);
+	}
+	else
+	{
 		step_ = 0.0f;
 		ChangeState(STATE::CHASE);
 	}
@@ -477,6 +502,17 @@ void EnemyRobot::ChangeStateKnockBack(void)
 	animController_->Play(static_cast<int>(ANIM_TYPE::HIT), false);
 }
 
+void EnemyRobot::ChangeStateDamaged(void)
+{
+	stateUpdate_ = std::bind(&EnemyRobot::UpdateDamaged, this);
+	
+	movePow_ = SchoolUtility::VECTOR_ZERO;
+
+	animTypeDamaged_ = static_cast<int>(ANIM_TYPE::HIT);
+
+	animController_->Play(animTypeDamaged_, false);
+}
+
 void EnemyRobot::ChangeStateEnd(void)
 {
 	stateUpdate_ = std::bind(&EnemyRobot::UpdateEnd, this);
@@ -663,7 +699,7 @@ void EnemyRobot::UpdateAttackKick(void)
 
 	// 距離が離れてるなら近づく
 	VECTOR targetMovePow = SchoolUtility::VECTOR_ZERO;
-	if (GetDistanceToP() > TOO_NEAR_RANGE && !animController_->IsEnd())
+	if (GetDistanceToP() > TOO_NEAR_RANGE && !animController_->IsEnd(animController_->GetPlayType()))
 	{
 		VECTOR targetDir = GetLookPlayerXZ();
 		if (SchoolUtility::SqrMagnitude(targetDir) > SchoolUtility::kEpsilonNormalSqrt)
@@ -677,7 +713,7 @@ void EnemyRobot::UpdateAttackKick(void)
 		movePow_, targetMovePow, KICK_APPROACH_LERP_RATE);
 
 	// キックモーションが終わったら
-	if (animController_->IsEnd())
+	if (animController_->IsEnd(static_cast<int>(ANIM_TYPE::KICK)))
 	{
 		// 移動量をゼロにする
 		movePow_ = SchoolUtility::VECTOR_ZERO;
@@ -704,7 +740,7 @@ void EnemyRobot::UpdateDead(void)
 {
 
 	// アニメーション終了後、大きさを線形補間で小さくしていく
-	if (animController_->IsEnd())
+	if (animController_->IsEnd(static_cast<int>(ANIM_TYPE::DIE)))
 	{
 		transform_.scl = SchoolUtility::Lerp(
 			transform_.scl,

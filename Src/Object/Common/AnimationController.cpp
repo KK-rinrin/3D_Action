@@ -5,9 +5,9 @@
 AnimationController::AnimationController(int modelId)
 	:
 	modelId_(modelId),
-	playType_(-1),
-	playAnim_(),
-	isLoop_(true)
+	isBlending_(false),
+	blendTime_(0.0f),
+	priorityType_(-1)
 {
 }
 
@@ -20,6 +20,8 @@ void AnimationController::Add(int type, float speed, const std::string path)
 	Animation animation;
 	animation.model = MV1LoadModel(path.c_str());
 	animation.animIndex = -1;
+	animation.totalTime =
+		MV1GetAnimTotalTime(animation.model, 0);
 
 	Add(type, speed, animation);
 }
@@ -29,51 +31,74 @@ void AnimationController::AddInFbx(int type, float speed, int animIndex)
 	Animation animation;
 	animation.model = -1;
 	animation.animIndex = animIndex;
+	animation.totalTime =
+		MV1GetAnimTotalTime(modelId_, animation.animIndex);
 
 	Add(type, speed, animation);
 }
 
-void AnimationController::Play(int type, bool isLoop)
+void AnimationController::Play(int type, bool isLoop, float blendTime)
 {
 
-	if (playType_ == type)
+	// 優先されているアニメーションタイプを検出
+	int priorityType = -1;
+	for (const auto& data : animations_)
 	{
-		// 同じアニメーションだったら再生を継続する
+		if (!data.second.isPriority) continue;
+		priorityType = data.first;
+	}
+
+	if (priorityType_ == type)
+	{
+		// 要求されたアニメーションが優先中の場合のみ何もしない
 		return;
 	}
 
-	if (playType_ != -1)
+	// 要求されたアニメーションをアタッチ
+	auto& priAnim = animations_.at(type);
+	if (priAnim.attachNo > -1)
 	{
-		// モデルからアニメーションを外す
-		MV1DetachAnim(modelId_, playAnim_.attachNo);
+		// フェードアウト中の同一アニメーションは再利用せず、先頭から再生する
+		MV1DetachAnim(modelId_, priAnim.attachNo);
+		priAnim.attachNo = -1;
+		priAnim.isPriority = false;
+		priAnim.step = 0.0f;
+		priAnim.blendRate = 0.0f;
+		priAnim.blendStep = 0.0f;
+		priAnim.weight = 0.0f;
 	}
+	priAnim.attachNo = AttachAnim(priAnim);
+	priAnim.isPriority = true;
+	priAnim.step = 0.0f;
+	priAnim.blendStep = 0.0f;
 
-	// アニメーション種別を変更
-	playType_ = type;
-	playAnim_ = animations_[type];
-
-	// 初期化
-	playAnim_.step = 0.0f;
-
-	// モデルにアニメーションを付ける
-	if (playAnim_.model == -1)
+	if (priorityType == -1)
 	{
-		// モデルと同じファイルからアニメーションをアタッチする
-		playAnim_.attachNo = MV1AttachAnim(modelId_, playAnim_.animIndex);
+		// 何も再生されていない
+		priAnim.blendRate = 1.0f;
 	}
 	else
 	{
-		// 別のモデルファイルからアニメーションをアタッチする
-		// DxModelViewerを確認すること(大体0か1)
-		int animIdx = 0;
-		playAnim_.attachNo = MV1AttachAnim(modelId_, animIdx, playAnim_.model);
+		// アニメーションをブレンド中にする
+		isBlending_ = true;
+
+		// 現在設定されている優先アニメーションを非優先にする
+		auto& oldPri = animations_.at(priorityType);
+		oldPri.isPriority = false;
 	}
 
-	// アニメーション総時間の取得
-	playAnim_.totalTime = MV1GetAttachAnimTotalTime(modelId_, playAnim_.attachNo);
+	// 現在のブレンド率を重みとして保存しておく
+	for (auto& anim : animations_)
+	{
+		anim.second.weight = anim.second.blendRate;
+	}
 
 	// アニメーションループ
-	isLoop_ = isLoop;
+	priAnim.isLoop = isLoop;
+
+	// 更新
+	blendTime_ = blendTime;
+	priorityType_ = type;
 
 }
 
@@ -84,25 +109,81 @@ void AnimationController::Update(void)
 	float deltaTime = SceneManager::GetInstance().GetDeltaTime();
 
 	// 再生
-	playAnim_.step += (deltaTime * playAnim_.speed);
+	auto& priAnim = animations_.at(priorityType_);
+	priAnim.step += (deltaTime * priAnim.speed);
+	priAnim.blendStep += deltaTime;
 
-	// アニメーションが終了したら
-	if (playAnim_.step > playAnim_.totalTime)
+	// ブレンド率の計算
+	if (isBlending_)
 	{
-		if (isLoop_)
-		{
-			// ループ再生
-			playAnim_.step = 0.0f;
-		}
-		else
-		{
-			// ループしない
-			playAnim_.step = playAnim_.totalTime;
-		}
-	}
 
-	// アニメーション設定
-	MV1SetAttachAnimTime(modelId_, playAnim_.attachNo, playAnim_.step);
+		// 優先アニメーション
+		priAnim.blendRate = (priAnim.blendStep / blendTime_);
+		if (priAnim.blendRate >= 1.0f)
+		{
+			// ブレンド完了
+			priAnim.blendRate = 1.0f;
+			isBlending_ = false;
+		}
+
+		// 非優先アニメーション
+		float rev = 1.0f - priAnim.blendRate;
+		for (auto& anim : animations_)
+		{
+			if (anim.second.isPriority) continue;
+			if (anim.second.attachNo == -1) continue;
+
+			// アニメーション進行
+			anim.second.step += (deltaTime * anim.second.speed);
+			if (anim.second.step > anim.second.totalTime)
+			{
+				anim.second.step = anim.second.totalTime;
+			}
+			// ブレンド率を引いていく
+			anim.second.blendRate = anim.second.weight * rev;
+		}
+
+		for (auto& anim : animations_)
+		{
+			if (anim.second.attachNo == -1) continue;
+			// アニメーション時間更新
+			MV1SetAttachAnimTime(modelId_, anim.second.attachNo, anim.second.step);
+			// ブレンド率更新
+			MV1SetAttachAnimBlendRate(modelId_, anim.second.attachNo, anim.second.blendRate);
+			if (anim.second.blendRate <= 0.0f)
+			{
+				// デタッチ
+				MV1DetachAnim(modelId_, anim.second.attachNo);
+				anim.second.attachNo = -1;
+				anim.second.step = 0.0f;
+				anim.second.blendRate = 0.0f;
+				anim.second.blendStep = 0.0f;
+				anim.second.weight = 0.0f;
+			}
+		}
+
+	}
+	else
+	{
+
+		if (priAnim.step > priAnim.totalTime)
+		{
+			if (priAnim.isLoop)
+			{
+				// ループ再生
+				priAnim.step = 0.0f;
+			}
+			else
+			{
+				// ループしない
+				priAnim.step = priAnim.totalTime;
+			}
+		}
+
+		// ブレンドしていないなら、アニメーション時間を更新するだけでいい
+		MV1SetAttachAnimTime(modelId_, priAnim.attachNo, priAnim.step);
+
+	}
 
 }
 
@@ -125,22 +206,29 @@ void AnimationController::Release(void)
 
 int AnimationController::GetPlayType(void) const
 {
-	return playType_;
+	return priorityType_;
 }
 
-bool AnimationController::IsEnd(void) const
+bool AnimationController::IsEnd(int animType) const
 {
-
 	bool ret = false;
 
-	if (isLoop_)
+	const auto& anim = animations_.at(animType);
+
+	if (anim.isLoop)
 	{
 		// ループ設定されているなら、
 		// 無条件で終了しないを返す
-		return ret;
+		return false;
 	}
 
-	if (playAnim_.step >= playAnim_.totalTime)
+
+	if (anim.blendRate <= 0.0f)
+	{
+		// 再生していなかったら終了判定
+		return true;
+	}
+	if (anim.step >= anim.totalTime)
 	{
 		// 再生時間を過ぎたらtrue
 		return true;
@@ -152,7 +240,7 @@ bool AnimationController::IsEnd(void) const
 
 const AnimationController::Animation& AnimationController::GetPlayAnim(void) const
 {
-	return playAnim_;
+	return animations_.at(priorityType_);
 }
 
 void AnimationController::Add(int type, float speed, Animation& animation)
@@ -164,4 +252,27 @@ void AnimationController::Add(int type, float speed, Animation& animation)
 		// 追加
 		animations_.emplace(type, animation);
 	}
+}
+
+int AnimationController::AttachAnim(const Animation& animation) const
+{
+
+	int attachNo = -1;
+
+	// モデルにアニメーションを付ける
+	if (animation.model == -1)
+	{
+		// モデルと同じファイルからアニメーションをアタッチする
+		attachNo = MV1AttachAnim(modelId_, animation.animIndex);
+	}
+	else
+	{
+		// 別のモデルファイルからアニメーションをアタッチする
+		// DxModelViewerを確認すること(大体0か1)
+		int animIdx = 0;
+		attachNo = MV1AttachAnim(modelId_, animIdx, animation.model);
+	}
+
+	return attachNo;
+
 }

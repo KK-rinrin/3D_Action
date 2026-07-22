@@ -136,7 +136,12 @@ protected:
 	std::function<void(void)> stateUpdate_;
 
 	// ノックバックパラメータ
-	KnockBackParam knockBackParam_;
+	static constexpr float DAMAGED_KNOCKBACK_TIME = 0.1f;	// ノックバック時間が短い判定
+	KnockBackParam knockBackParam_;	// ノックバックのパラメータ
+	float damagedStep_;	// ダメージの秒
+
+	// 被ダメ時アニメーション種別
+	int animTypeDamaged_;
 
 	// 自己発光
 	std::vector<COLOR_F> materialEmiColors_;
@@ -178,13 +183,24 @@ protected:
 	virtual bool IsInValidDamage(void) const = 0;
 
 	// ノックバック開始処理
-	virtual void OnStartKnockBack(void) {}
+	virtual void OnStartKnockBack(void) = 0;
 
 	// ノックバック更新処理
 	void UpdateKnockBack(void);
 
 	// ノックバック終了処理
-	virtual void OnEndKnockBack(void) {}
+	virtual void OnEndKnockBack(void) = 0;
+
+	void StartDamaged(void);
+
+	// 被ダメージ開始処理
+	virtual void OnStartDamaged(void) = 0;
+
+	// 被ダメージ更新処理
+	void UpdateDamaged(void);
+
+	// 被ダメージ終了処理
+	virtual void OnEndDamaged(void) = 0;
 
 	// 点滅用初期処理
 	void InitBlink(void);

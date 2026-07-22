@@ -25,6 +25,7 @@ public:
 		RUN,
 		FAST_RUN,
 		JUMP,
+		JUMP_LANDING,
 		SPINNING_SLASH,
 		VERTICAL_SLASH,
 		HORIZONTAL_SLASH,
@@ -94,6 +95,9 @@ private:
 	// 攻撃コンボ制御
 	struct ATTACK_COMBO
 	{
+		// アニメーションタイプ種別
+		ANIM_TYPE animType = ANIM_TYPE::IDLE;
+
 		// コンボ受付開始ステップ
 		float stepInputStart = 0.0f;
 		// コンボ受付終了ステップ
@@ -247,4 +251,7 @@ private:
 	void DrawDebug(void) override;
 
 	WeaponBlade* weapon_;
+
+	// 着地アニメーション終了判定
+	bool isEndLandingAnim(void);
 };

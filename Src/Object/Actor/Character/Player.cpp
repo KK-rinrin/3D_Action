@@ -139,6 +139,9 @@ void Player::InitAnimation(void)
 	animController_->Add(
 		static_cast<int>(
 			ANIM_TYPE::HORIZONTAL_SLASH), 60.0f, path + "HorizontalSlash.mv1");
+	animController_->Add(
+		static_cast<int>(
+			ANIM_TYPE::JUMP_LANDING), 60.0f, path + "JumpLanding.mv1");
 
 	animController_->Play(static_cast<int>(ANIM_TYPE::IDLE));
 }
@@ -150,19 +153,19 @@ void Player::InitPost(void)
 
 	// 横切り攻撃(0.0～72.0)
 	// コンボ受付開始、衝突判定開始
-	data = { 15.0f, 50.0f, 24.0f, 38.0f, 55.0f, 8.0f, false, 0.0f };
+	data = { ANIM_TYPE::HORIZONTAL_SLASH, 15.0f, 50.0f, 24.0f, 38.0f, 55.0f, 8.0f, false, 0.0f };
 	atkComboData_.emplace(
 		STATE_ATTACK_COMBO::HORIZONTAL, data);
 
 	// 縦切り攻撃(0.0～68.0)
 	// コンボ受付開始、衝突判定開始
-	data = { 10.0f, 40.0f, 18.0f, 32.0f, 50.0f, 5.0f, false, 0.0f };
+	data = { ANIM_TYPE::VERTICAL_SLASH, 10.0f, 40.0f, 18.0f, 32.0f, 50.0f, 5.0f, false, 0.0f };
 	atkComboData_.emplace(
 		STATE_ATTACK_COMBO::VERTICAL, data);
 
 	// 回転攻撃
 	// コンボ受付開始、衝突判定開始
-	data = { 0.0f, 0.0f, 26.0f, 34.0f, 95.0f, 12.0f, false, 1.0f };
+	data = { ANIM_TYPE::SPINNING_SLASH, 0.0f, 0.0f, 26.0f, 34.0f, 95.0f, 12.0f, false, 1.0f };
 	atkComboData_.emplace(
 		STATE_ATTACK_COMBO::SPINNING, data);
 
@@ -200,15 +203,18 @@ void Player::ProcessMove(void)
 	{
 		moveSpeed_ = isDash ? SPEED_DASH : SPEED_MOVE;
 
-		if (!isJump_)
+		if (!isJump_ && isEndLandingAnim())
 		{
-			animController_->Play(static_cast<int>(isDash ? ANIM_TYPE::FAST_RUN : ANIM_TYPE::RUN));
+			animController_->Play(
+				static_cast<int>(isDash ? ANIM_TYPE::FAST_RUN : ANIM_TYPE::RUN),
+				true, 0.1f);
 		}
 	}
 	else
 	{
 		moveSpeed_ = 0.0f;
-		if (!isJump_) animController_->Play(static_cast<int>(ANIM_TYPE::IDLE));
+		// ジャンプ中、着地中はアニメーションを再生しない
+		if (!isJump_ && !isTrgLanding_ && isEndLandingAnim()) animController_->Play(static_cast<int>(ANIM_TYPE::IDLE),0.2f);
 		moveDir_ = SchoolUtility::VECTOR_ZERO;
 	}
 
@@ -217,6 +223,14 @@ void Player::ProcessMove(void)
 
 void Player::ProcessJump(void)
 {
+	// 着地アニメーションを再生
+	if (isTrgLanding_ && SchoolUtility::EqualsVZero(moveDir_))
+	{
+		animController_->Play(
+			static_cast<int>(ANIM_TYPE::JUMP_LANDING),
+			false, 0.05f);
+	}
+
 	// 持続ジャンプ処理
 	if (inputBinder_->IsJump())
 	{
@@ -229,11 +243,6 @@ void Player::ProcessJump(void)
 			jumpPow_ = VAdd(jumpPow_, VScale(SchoolUtility::DIR_U, jumpSpeed));
 		}
 	}
-	else
-	{
-		// ボタンを離したらジャンプ力に加算しない
-		stepJump_ = TIME_JUMP_INPUT;
-	}
 
 	// 初期ジャンプ処理
 	if (inputBinder_->IsTrgJump() && !isJump_)
@@ -244,7 +253,7 @@ void Player::ProcessJump(void)
 		isJump_ = true;
 		// アニメーション再生
 		animController_->Play(
-			static_cast<int>(ANIM_TYPE::JUMP), false);
+			static_cast<int>(ANIM_TYPE::JUMP), false, 0.2f);
 	}
 }
 
@@ -294,8 +303,12 @@ void Player::ChangeStateAttack(void)
 	stateUpdate_ = std::bind(&Player::UpdateAttack, this);
 
 	const ATTACK_COMBO& data = atkComboData_.at(stateAtkCombo_);	// コンボデータを取得
-	weapon_->SetAllColliderKnockBackPow(data.knockBackPow);
+	
+	// ノックバックせってい
+	weapon_->SetColliderKnockBackPow(static_cast<int>(WeaponBase::COLLIDER_TYPE::CAPSULE), data.knockBackPow);
+	
 	VECTOR inputDir = GetMoveInputDir();	// 移動
+	
 	if (!SchoolUtility::EqualsVZero(inputDir))
 	{
 		VECTOR blendedDir = SchoolUtility::Lerp(
@@ -311,26 +324,10 @@ void Player::ChangeStateAttack(void)
 		movePow_ = SchoolUtility::VECTOR_ZERO;
 	}
 
-	switch (stateAtkCombo_)
-	{
-	case Player::STATE_ATTACK_COMBO::HORIZONTAL:
-		// 横切りアニメーション再生
-		animController_->Play(
-			static_cast<int>(ANIM_TYPE::HORIZONTAL_SLASH), false);
-		break;
-	case Player::STATE_ATTACK_COMBO::VERTICAL:
-		// 縦切りアニメーション再生
-		animController_->Play(
-			static_cast<int>(ANIM_TYPE::VERTICAL_SLASH), false);
-		break;
-	case Player::STATE_ATTACK_COMBO::SPINNING:
-		// スピニングスラッシュアニメーション再生
-		animController_->Play(
-			static_cast<int>(ANIM_TYPE::SPINNING_SLASH), false);
-		break;
-	default:
-		break;
-	}
+	// コンボに応じたアニメーション種別を取得
+	int animType = static_cast<int>(data.animType);
+	// 再生
+	animController_->Play(animType, false);
 
 #pragma region ～旧コード～
 #if 0
@@ -384,6 +381,9 @@ void Player::UpdateAttack(void)
 	// アニメーションの再生Stepを取得
 	float step = animController_->GetPlayAnim().step;
 
+	// 対応するアニメーション種別
+	int animType = static_cast<int>(data.animType);
+
 	// 武器の衝突判定設定
 	weapon_->SetAllColliderValid(data.IsValidCollsion(step));
 
@@ -401,7 +401,7 @@ void Player::UpdateAttack(void)
 	if (data.isNextCombo)
 	{
 		// アニメーション終了か割り込み有効か
-		if (animController_->IsEnd() || data.IsValidInterrupt(step))
+		if (animController_->IsEnd(animType) || data.IsValidInterrupt(step))
 		{
 			// 残りコンボ判定
 			int state = static_cast<int>(stateAtkCombo_);
@@ -419,7 +419,7 @@ void Player::UpdateAttack(void)
 	}
 
 	// アニメーションの再生終了
-	if (animController_->IsEnd())
+	if (animController_->IsEnd(animType))
 	{
 		// コンボリセット
 		for (auto& data : atkComboData_)
@@ -518,4 +518,21 @@ void Player::DrawDebug(void)
 {
 	DrawFormatString(10, 10, GetColor(255, 255, 255), "プレイヤー座標：\n X=%.2f\nY=%.2f\nZ=%.2f",
 		transform_.pos.x, transform_.pos.y, transform_.pos.z);
+}
+
+bool Player::isEndLandingAnim(void)
+{
+	// アニメーションが着地でない
+	if (animController_->GetPlayType() != static_cast<int>(ANIM_TYPE::JUMP_LANDING))
+	{
+		return true;
+	}
+
+	// アニメーションが終了しているか
+	if (animController_->IsEnd(static_cast<int>(ANIM_TYPE::JUMP_LANDING)))
+	{
+		return true;
+	}
+
+	return false;
 }

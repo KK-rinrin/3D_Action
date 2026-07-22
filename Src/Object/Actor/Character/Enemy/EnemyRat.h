@@ -15,6 +15,7 @@ public:
 		WANDER,
 		MOVE_IN_RANGE,
 		KNOCKBACK,
+		DAMAGED,
 		DEAD,
 		END
 	};
@@ -57,6 +58,12 @@ protected:
 
 	// ノックバック終了処理
 	void OnEndKnockBack(void) override;
+
+	// 被ダメージ開始処理
+	void OnStartDamaged(void) override;
+
+	// 被ダメージ終了処理
+	void OnEndDamaged(void) override;
 
 private:
 	// モデルの大きさ
@@ -107,6 +114,7 @@ private:
 	void ChangeStateWander(void);
 	void ChangeStateMoveInRange(void);
 	void ChangeStateKnockBack(void);
+	void ChangeStateDamaged(void);
 	void ChangeStateDead(void);
 	void ChangeStateEnd(void);
 

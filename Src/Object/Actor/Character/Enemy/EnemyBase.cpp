@@ -2,6 +2,7 @@
 #include "../../../../Utility/SchoolUtility.h"
 #include "../../../Collider/ColliderSphere.h"
 #include "../../../Collider/ColliderCapsule.h"
+#include "../../../Common/AnimationController.h"
 #include "../../../../Manager/SceneManager.h"
 
 EnemyBase::EnemyBase(const EnemyBase::EnemyData& data)
@@ -13,7 +14,8 @@ EnemyBase::EnemyBase(const EnemyBase::EnemyData& data)
 	moveRadius_(data.radius),
 	isHit_(false),
 	isVisible_(true),
-	targetTransform_(nullptr)
+	targetTransform_(nullptr),
+	damagedStep_(0.0f)
 {
 	// ‰ŠúÀ•W‚ÌÝ’è
 	transform_.pos = defaultPos_;
@@ -122,7 +124,8 @@ void EnemyBase::CollisionWeapon(void)
 
 		if (weaponCol->IsHit(colMyCap))
 		{
-			if (weaponCol->GetKnockBackPow() > 0.0f)
+			const bool isKnockBack = weaponCol->GetKnockBackPow() > 0.0f;
+			if (isKnockBack)
 			{
 				VECTOR diff = VSub(
 					weaponCol->GetCenter(), colMyCap->GetCenter());
@@ -133,6 +136,10 @@ void EnemyBase::CollisionWeapon(void)
 				OnStartKnockBack();
 			}
 			Damage(1);
+			if (!isKnockBack)
+			{
+				StartDamaged();
+			}
 		}
 	}
 }
@@ -157,6 +164,24 @@ void EnemyBase::UpdateKnockBack(void)
 		OnEndKnockBack();
 
 		// “_–ÅI—¹ˆ—
+		SetDefaultEmiColor();
+	}
+}
+
+void EnemyBase::StartDamaged(void)
+{
+	damagedStep_ = 0.0f;
+	OnStartDamaged();
+}
+
+void EnemyBase::UpdateDamaged(void)
+{
+	damagedStep_ += scnMng_.GetDeltaTime();
+	Blink(damagedStep_);
+
+	if (animController_->IsEnd(animTypeDamaged_))
+	{
+		OnEndDamaged();
 		SetDefaultEmiColor();
 	}
 }

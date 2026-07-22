@@ -52,6 +52,9 @@ protected:
 
 	// ジャンプ判定
 	bool isJump_;
+
+	// このフレームで着地したか
+	bool isTrgLanding_;
 	// ジャンプの入力受付時間
 	float stepJump_;
 

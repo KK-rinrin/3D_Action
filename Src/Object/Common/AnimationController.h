@@ -10,12 +10,17 @@ public:
 	// アニメーションデータ
 	struct Animation
 	{
-		int model = -1;
-		int attachNo = -1;
-		int animIndex = 0;
-		float speed = 0.0f;
-		float totalTime = 0.0f;
-		float step = 0.0f;
+		int model = -1;				// モデルハンドルID
+		int attachNo = -1;			// フレーム番号
+		int animIndex = 0;			// アニメーションインデックス
+		float speed = 0.0f;			// 再生速度
+		float totalTime = 0.0f;		// アニメーション時間
+		float step = 0.0f;			// 現在のステップ
+		float blendStep = 0.0f;		// ブレンド時間
+		float blendRate = 0.0f;		// ブレンド率
+		float weight = 0.0f;		// 重み
+		bool isPriority = false;	// 優先するかどうか
+		bool isLoop = false;		// ループするかどうか
 	};
 
 	// コンストラクタ
@@ -31,7 +36,7 @@ public:
 	void AddInFbx(int type, float speed, int animIndex);
 
 	// アニメーション再生
-	void Play(int type, bool isLoop = true);
+	void Play(int type, bool isLoop = true, float blendTime = 0.5f);
 
 	// 更新
 	void Update(void);
@@ -43,7 +48,7 @@ public:
 	int GetPlayType(void) const;
 
 	// 再生終了
-	bool IsEnd(void) const;
+	bool IsEnd(int animType) const;
 
 	// 再生中のアニメーション情報を取得
 	const Animation& GetPlayAnim(void) const;
@@ -56,14 +61,19 @@ private:
 	// 種類別のアニメーションデータ
 	std::map<int, Animation> animations_;
 
-	// 再生中のアニメーション
-	int playType_;
-	Animation playAnim_;
+	// アニメーションをブレンドしているかどうか
+	bool isBlending_;
 
-	// アニメーションをループするかしないか
-	bool isLoop_;
+	// ブレンド時間
+	float blendTime_;
+
+	// 現在、優先度の高いアニメーション種別
+	int priorityType_;
 
 	// アニメーション追加の共通処理
 	void Add(int type, float speed, Animation& animation);
+
+	// アニメーションをアタッチする
+	int AttachAnim(const Animation& animation) const;
 
 };
