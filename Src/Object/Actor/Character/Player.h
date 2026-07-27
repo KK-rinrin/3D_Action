@@ -280,7 +280,9 @@ private:
 
 	// 衝突系
 	void CollisionReserve(void) override;			// 衝突準備
-	virtual void CollisionPost(void) override {};	// 衝突処理後
+	void CollisionPost(void) override;				// 衝突処理後
+	// 敵本体のカプセルからXZ方向へ押し戻す
+	bool CollisionEnemy(void);
 
 	// デバッグ描画
 	void DrawDebug(void) override;

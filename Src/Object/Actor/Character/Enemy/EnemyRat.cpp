@@ -55,6 +55,13 @@ void EnemyRat::InitCollider(void)
 		ColliderBase::TAG::ENEMY, &transform_,
 		COL_CAPSULE_TOP_LOCAL_POS, COL_CAPSULE_DOWN_LOCAL_POS, COL_CAPSULE_RADIUS);
 	ownColliders_.emplace(static_cast<int>(COLLIDER_TYPE::CAPSULE), colCap);
+
+	// プレイヤーへの接触攻撃用カプセル
+	ColliderCapsule* colAttack = new ColliderCapsule(
+		ColliderBase::TAG::ENEMY_ATTACK, &transform_,
+		COL_CAPSULE_TOP_LOCAL_POS, COL_CAPSULE_DOWN_LOCAL_POS,
+		COL_CAPSULE_RADIUS);
+	AddAttackCollider(colAttack);
 }
 
 void EnemyRat::InitAnimation(void)
@@ -121,6 +128,9 @@ void EnemyRat::UpdateProcess(void)
 {
 	// 状態別更新
 	stateUpdate_();
+
+	// 被ダメージ中と死亡中は接触攻撃を無効にする
+	SetAllAttackCollidersValid(!IsInValidDamage());
 }
 
 void EnemyRat::UpdateProcessPost(void)

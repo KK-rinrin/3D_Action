@@ -102,6 +102,18 @@ void AnimationController::Play(int type, bool isLoop, float blendTime)
 
 }
 
+void AnimationController::ResetPlayStep(void)
+{
+	if (animations_.count(priorityType_) == 0) return;
+
+	Animation& animation = animations_.at(priorityType_);
+	animation.step = 0.0f;
+	if (animation.attachNo > -1)
+	{
+		MV1SetAttachAnimTime(modelId_, animation.attachNo, animation.step);
+	}
+}
+
 void AnimationController::Update(void)
 {
 

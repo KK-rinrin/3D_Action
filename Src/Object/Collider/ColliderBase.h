@@ -4,6 +4,7 @@
 class Transform;
 class ColliderSphere;
 class ColliderCapsule;
+class ColliderCircle;
 
 class ColliderBase
 {
@@ -17,6 +18,7 @@ public:
 		CAPSULE,
 		CONE,
 		MODEL,
+		CIRCLE,
 	};
 	// è’ìÀéÌï 
 	enum class TAG
@@ -25,6 +27,7 @@ public:
 		PLAYER,
 		PLAYER_WEAPON,
 		ENEMY,
+		ENEMY_ATTACK,
 		VIEW_RANGE,
 		CAMERA,
 

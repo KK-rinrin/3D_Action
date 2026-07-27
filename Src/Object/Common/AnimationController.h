@@ -38,6 +38,9 @@ public:
 	// アニメーション再生
 	void Play(int type, bool isLoop = true, float blendTime = 0.5f);
 
+	// 再生中アニメーションを先頭へ戻す
+	void ResetPlayStep(void);
+
 	// 更新
 	void Update(void);
 

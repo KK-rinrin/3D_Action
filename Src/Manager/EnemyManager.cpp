@@ -65,6 +65,19 @@ void EnemyManager::SetTargetTransform(const Transform* targetTransform)
 	}
 }
 
+bool EnemyManager::ConsumePlayerHit(void)
+{
+	bool isHit = false;
+	for (auto& enemy : enemies_)
+	{
+		if (enemy->ConsumePlayerDamage() > 0)
+		{
+			isHit = true;
+		}
+	}
+	return isHit;
+}
+
 void EnemyManager::LoadCsvData(void)
 {
 	// ƒtƒ@ƒCƒ‹‚Ì“Ç

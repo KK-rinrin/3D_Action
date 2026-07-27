@@ -3,6 +3,7 @@
 #include <DxLib.h>
 #include "../../Utility/SchoolUtility.h"
 class Transform;
+class ColliderCapsule;
 
 // 球弾データ（汎用）
 struct SphereShot
@@ -24,6 +25,9 @@ public:
 
 	// 更新（dt を外部から渡す）
 	void Update(float dt);
+
+	// プレイヤーカプセルとの衝突判定
+	bool Collision(const ColliderCapsule* targetCollider);
 
 	// 描画（DrawSphere3D を利用）
 	void Draw() const;

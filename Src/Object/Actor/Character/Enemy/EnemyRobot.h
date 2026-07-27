@@ -105,6 +105,19 @@ private:
 	// 衝突判定用カプセル球体半径
 	static constexpr float COL_CAPSULE_RADIUS = 30.0f;
 
+	// キック攻撃用カプセル上部球体
+	static constexpr VECTOR COL_ATTACK_TOP_LOCAL_POS =
+	{ 0.0f, 110.0f, 110.0f };
+	// キック攻撃用カプセル下部球体
+	static constexpr VECTOR COL_ATTACK_DOWN_LOCAL_POS =
+	{ 0.0f, 35.0f, 110.0f };
+	// キック攻撃用カプセル球体半径
+	static constexpr float COL_ATTACK_RADIUS = 45.0f;
+	// 密着時のキック攻撃用XZ円
+	static constexpr VECTOR COL_CLOSE_ATTACK_LOCAL_POS =
+	{ 0.0f, 45.0f, 35.0f };
+	static constexpr float COL_CLOSE_ATTACK_RADIUS = 35.0f;
+
 	// 視野判定用円錐頂点
 	static constexpr VECTOR COL_CONE_APEX_LOCAL_POS = { 0.0f, 0.0f, 0.0f };
 	// 視野判定用円錐軸方向
@@ -167,6 +180,10 @@ private:
 
 	// ターゲットが入ったら近接攻撃を実行する範囲
 	static constexpr float ATTACK_RANGE = 180.0f;
+	// キック攻撃判定の開始再生率
+	static constexpr float KICK_COLLISION_START_RATE = 0.3f;
+	// キック攻撃判定の終了再生率
+	static constexpr float KICK_COLLISION_END_RATE = 0.6f;
 	// 近接攻撃クールタイム
 	static constexpr float ATTACK_COOLTIME = 0.8f;
 	// 近接攻撃中に近づく速度

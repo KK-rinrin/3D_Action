@@ -29,6 +29,7 @@
     <ClCompile Include="Src\Object\Actor\Weapon\WeaponBase.cpp" />
     <ClCompile Include="Src\Object\Actor\Weapon\WeaponBlade.cpp" />
     <ClCompile Include="Src\Object\Collider\ColliderCapsule.cpp" />
+    <ClCompile Include="Src\Object\Collider\ColliderCircle.cpp" />
     <ClCompile Include="Src\Object\Collider\ColliderCone.cpp" />
     <ClCompile Include="Src\Object\Collider\ColliderLine.cpp" />
     <ClCompile Include="Src\Object\Collider\ColliderBase.cpp" />
@@ -75,6 +76,7 @@
     <ClInclude Include="Src\Object\Actor\Weapon\WeaponBase.h" />
     <ClInclude Include="Src\Object\Actor\Weapon\WeaponBlade.h" />
     <ClInclude Include="Src\Object\Collider\ColliderCapsule.h" />
+    <ClInclude Include="Src\Object\Collider\ColliderCircle.h" />
     <ClInclude Include="Src\Object\Collider\ColliderCone.h" />
     <ClInclude Include="Src\Object\Collider\ColliderLine.h" />
     <ClInclude Include="Src\Object\Collider\ColliderBase.h" />

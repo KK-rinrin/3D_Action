@@ -2,6 +2,7 @@
 #include "../../../../Utility/SchoolUtility.h"
 #include "../../../Collider/ColliderSphere.h"
 #include "../../../Collider/ColliderCapsule.h"
+#include "../../../Collider/ColliderCircle.h"
 #include "../../../Collider/ColliderModel.h"
 #include "../../../Common/AnimationController.h"
 #include "../../../../Manager/SceneManager.h"
@@ -16,6 +17,7 @@ EnemyBase::EnemyBase(const EnemyBase::EnemyData& data)
 	isHit_(false),
 	isVisible_(true),
 	targetTransform_(nullptr),
+	playerDamage_(0),
 	obstacleStuckStep_(0.0f),
 	obstacleAvoidStep_(0.0f),
 	obstacleAvoidSide_(1.0f),
@@ -38,6 +40,13 @@ void EnemyBase::SetTargetTransform(const Transform* targetTransform)
 	targetTransform_ = targetTransform;
 }
 
+int EnemyBase::ConsumePlayerDamage(void)
+{
+	int damage = playerDamage_;
+	playerDamage_ = 0;
+	return damage;
+}
+
 void EnemyBase::Draw(void)
 {
 	if (!isVisible_) return;
@@ -45,11 +54,30 @@ void EnemyBase::Draw(void)
 	CharacterBase::Draw();
 
 #ifdef _DEBUG
+	// 攻撃専用コライダのデバッグ描画
+	for (const auto& attackCollider : attackColliders_)
+	{
+		attackCollider->Draw();
+	}
+#endif // _DEBUG
+
+#ifdef _DEBUG
 
 	// 移動可能範囲のデバッグ描画
 	DrawSphere3D(defaultPos_, moveRadius_, 16, 0x000099, 0x000099, false);
 
 #endif // _DEBUG
+}
+
+void EnemyBase::Release(void)
+{
+	CharacterBase::Release();
+
+	for (auto& attackCollider : attackColliders_)
+	{
+		delete attackCollider;
+	}
+	attackColliders_.clear();
 }
 
 void EnemyBase::InitPost(void)
@@ -155,6 +183,9 @@ void EnemyBase::CollisionPost(void)
 
 	// 衝突判定(プレイヤーの武器)
 	CollisionWeapon();
+
+	// 衝突判定(敵の攻撃とプレイヤー)
+	CollisionPlayer();
 }
 
 bool EnemyBase::InMovableRange(void) const
@@ -260,6 +291,7 @@ void EnemyBase::Hide(void)
 	transform_.scl = SchoolUtility::VECTOR_ZERO;
 	transform_.Update();
 	SetAllColliderValid(false);
+	SetAllAttackCollidersValid(false);
 	ClearHitCollider();
 }
 
@@ -304,6 +336,90 @@ void EnemyBase::CollisionWeapon(void)
 			}
 		}
 	}
+}
+
+void EnemyBase::CollisionPlayer(void)
+{
+	const ColliderCapsule* playerCollider = GetPlayerCapsuleCollider();
+	if (playerCollider == nullptr || !playerCollider->IsValid()) return;
+
+	for (const auto& attackCollider : attackColliders_)
+	{
+		if (attackCollider == nullptr || !attackCollider->IsValid()) continue;
+		if (attackCollider->GetTag() != ColliderBase::TAG::ENEMY_ATTACK) continue;
+
+		bool isHit = false;
+		switch (attackCollider->GetShape())
+		{
+		case ColliderBase::SHAPE::CAPSULE:
+		{
+			const ColliderCapsule* attackCapsule =
+				dynamic_cast<const ColliderCapsule*>(attackCollider);
+			isHit = attackCapsule != nullptr
+				&& attackCapsule->IsHit(playerCollider);
+			break;
+		}
+		case ColliderBase::SHAPE::SPHERE:
+		{
+			const ColliderSphere* attackSphere =
+				dynamic_cast<const ColliderSphere*>(attackCollider);
+			isHit = attackSphere != nullptr
+				&& attackSphere->IsHit(playerCollider);
+			break;
+		}
+		case ColliderBase::SHAPE::CIRCLE:
+		{
+			const ColliderCircle* attackCircle =
+				dynamic_cast<const ColliderCircle*>(attackCollider);
+			isHit = attackCircle != nullptr
+				&& attackCircle->IsHit(playerCollider);
+			break;
+		}
+		default:
+			break;
+		}
+
+		if (isHit)
+		{
+			ReservePlayerDamage(1);
+			return;
+		}
+	}
+}
+
+void EnemyBase::AddAttackCollider(ColliderBase* attackCollider)
+{
+	if (attackCollider == nullptr) return;
+	if (attackCollider->GetTag() != ColliderBase::TAG::ENEMY_ATTACK) return;
+
+	attackColliders_.emplace_back(attackCollider);
+}
+
+void EnemyBase::SetAllAttackCollidersValid(bool isValid)
+{
+	for (const auto& attackCollider : attackColliders_)
+	{
+		attackCollider->SetValid(isValid);
+	}
+}
+
+const ColliderCapsule* EnemyBase::GetPlayerCapsuleCollider(void) const
+{
+	for (const auto& hitCollider : hitColliders_)
+	{
+		if (hitCollider == nullptr || !hitCollider->IsValid()) continue;
+		if (hitCollider->GetTag() != ColliderBase::TAG::PLAYER) continue;
+		if (hitCollider->GetShape() != ColliderBase::SHAPE::CAPSULE) continue;
+
+		return dynamic_cast<const ColliderCapsule*>(hitCollider);
+	}
+	return nullptr;
+}
+
+void EnemyBase::ReservePlayerDamage(int damage)
+{
+	if (damage <= 0) return;
+	playerDamage_ += damage;
 }
 
 void EnemyBase::UpdateObstacleAvoidance(void)

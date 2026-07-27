@@ -31,6 +31,9 @@ public:
 	// 追跡対象を設定
 	void SetTargetTransform(const Transform* targetTransform);
 
+	// プレイヤーへの攻撃命中を取得してリセット
+	bool ConsumePlayerHit(void);
+
 	// CSVから敵情報の読取を行う
 	void LoadCsvData(void);
 

@@ -6,6 +6,8 @@
 #include <DxLib.h>
 #include "../CharacterBase.h"
 
+class ColliderCapsule;
+
 class EnemyBase : public CharacterBase
 {
 public:
@@ -102,8 +104,14 @@ public:
 	// 描画
 	virtual void Draw(void) override;
 
+	// 解放
+	void Release(void) override;
+
 	// 追跡対象を設定
 	void SetTargetTransform(const Transform* targetTransform);
+
+	// プレイヤーへの攻撃ダメージを取得してリセット
+	int ConsumePlayerDamage(void);
 
 protected:
 	// 種別
@@ -128,6 +136,12 @@ protected:
 
 	// 追跡対象
 	const Transform* targetTransform_;
+
+	// プレイヤーへ与える予約ダメージ
+	int playerDamage_;
+
+	// 攻撃専用コライダ
+	std::vector<ColliderBase*> attackColliders_;
 
 	// 前方地面追従で上れる最大の高さ
 	static constexpr float GROUND_FOLLOW_MAX_STEP_HEIGHT = 30.0f;
@@ -218,6 +232,21 @@ protected:
 
 	// 衝突判定(プレイヤーの武器)
 	void CollisionWeapon(void);
+
+	// 衝突判定(敵の攻撃とプレイヤー)
+	void CollisionPlayer(void);
+
+	// 攻撃専用コライダを追加
+	void AddAttackCollider(ColliderBase* attackCollider);
+
+	// 攻撃専用コライダの有効無効設定
+	void SetAllAttackCollidersValid(bool isValid);
+
+	// プレイヤーのカプセルコライダを取得
+	const ColliderCapsule* GetPlayerCapsuleCollider(void) const;
+
+	// プレイヤーへのダメージを予約
+	void ReservePlayerDamage(int damage);
 
 	// 障害物への詰まりと迂回を更新
 	void UpdateObstacleAvoidance(void);

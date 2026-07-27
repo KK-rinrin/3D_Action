@@ -70,6 +70,17 @@ void GameScene::Init(void)
 		enemy_->AddHitCollider(playerCapsule);
 	}
 
+	// 敵本体のカプセルコライダをプレイヤーに登録
+	for (const auto& enemy : enemy_->GetEnemies())
+	{
+		const ColliderBase* enemyCapsule = enemy->GetOwnCollider(
+			static_cast<int>(CharacterBase::COLLIDER_TYPE::CAPSULE));
+		if (enemyCapsule != nullptr)
+		{
+			player_->AddHitCollider(enemyCapsule);
+		}
+	}
+
 	// プレイヤー武器のカプセルコライダをエネミーに登録
 	const ColliderBase* weaponCapsule = player_->GetWeapon()->
 		GetOwnCollider(static_cast<int>(WeaponBlade::COLLIDER_TYPE::CAPSULE));
@@ -92,6 +103,12 @@ void GameScene::Update(void)
 	stage_->Update();
 	player_->Update();
 	enemy_->Update();
+
+	// 敵の攻撃が当たったらプレイヤーへダメージ
+	if (enemy_->ConsumePlayerHit())
+	{
+		player_->Damage(1);
+	}
 
 	// プレイヤーのHPが0になったらゲームオーバーへ移行
 	if (player_->IsDead())

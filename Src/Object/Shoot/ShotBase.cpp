@@ -1,4 +1,7 @@
 #include "ShotBase.h"
+#include "../Collider/ColliderCapsule.h"
+#include "../Collider/ColliderSphere.h"
+#include "../Common/Transform.h"
 
 ShotBase::ShotBase()
 {
@@ -36,6 +39,36 @@ void ShotBase::Update(float dt)
 		}
 		else { ++it; }
 	}
+}
+
+bool ShotBase::Collision(const ColliderCapsule* targetCollider)
+{
+	if (targetCollider == nullptr || !targetCollider->IsValid()) return false;
+
+	bool isHit = false;
+	for (auto it = shots_.begin(); it != shots_.end(); )
+	{
+		// ’e‚ÌÀ•W‚ğ’Ç]æ‚Æ‚·‚é“GUŒ‚—p‹…ƒRƒ‰ƒCƒ_
+		Transform shotTransform;
+		shotTransform.pos = it->pos;
+		ColliderSphere shotCollider(
+			ColliderBase::TAG::ENEMY_ATTACK,
+			&shotTransform,
+			SchoolUtility::VECTOR_ZERO,
+			it->r);
+
+		if (shotCollider.IsHit(targetCollider))
+		{
+			// –½’†‚µ‚½’e‚ÍÁ–Å
+			it = shots_.erase(it);
+			isHit = true;
+		}
+		else
+		{
+			++it;
+		}
+	}
+	return isHit;
 }
 
 void ShotBase::Draw() const

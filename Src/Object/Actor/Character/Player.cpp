@@ -1,3 +1,4 @@
+#include <cmath>
 #include "../../../Utility/SchoolUtility.h"
 #include "../../../Application.h"
 #include "../../../Manager/ResourceManager.h"
@@ -594,6 +595,84 @@ void Player::CollisionReserve(void)
 			colCap->SetLocalPosDown(COL_CAPSULE_DOWN_LOCAL_POS);
 		}
 	}
+}
+
+void Player::CollisionPost(void)
+{
+	if (CollisionEnemy())
+	{
+		// 敵からの押し戻しでステージへめり込まないよう再度補正
+		CollisionCapsule();
+	}
+}
+
+bool Player::CollisionEnemy(void)
+{
+	const int capsuleType = static_cast<int>(COLLIDER_TYPE::CAPSULE);
+	if (ownColliders_.count(capsuleType) == 0) return false;
+
+	ColliderCapsule* playerCollider =
+		dynamic_cast<ColliderCapsule*>(ownColliders_.at(capsuleType));
+	if (playerCollider == nullptr || !playerCollider->IsValid()) return false;
+
+	bool isPushed = false;
+	for (const auto& hitCollider : hitColliders_)
+	{
+		if (hitCollider == nullptr || !hitCollider->IsValid()) continue;
+		if (hitCollider->GetTag() != ColliderBase::TAG::ENEMY) continue;
+		if (hitCollider->GetShape() != ColliderBase::SHAPE::CAPSULE) continue;
+
+		const ColliderCapsule* enemyCollider =
+			dynamic_cast<const ColliderCapsule*>(hitCollider);
+		if (enemyCollider == nullptr ||
+			!playerCollider->IsHit(enemyCollider)) continue;
+
+		VECTOR playerCenter = playerCollider->GetCenter();
+		VECTOR enemyStart = enemyCollider->GetPosDown();
+		VECTOR enemyEnd = enemyCollider->GetPosTop();
+		playerCenter.y = 0.0f;
+		enemyStart.y = 0.0f;
+		enemyEnd.y = 0.0f;
+
+		const VECTOR enemyLine = VSub(enemyEnd, enemyStart);
+		const float enemyLineLengthSq = VDot(enemyLine, enemyLine);
+		float rate = 0.0f;
+		if (enemyLineLengthSq > 0.0f)
+		{
+			rate =
+				VDot(VSub(playerCenter, enemyStart), enemyLine) /
+				enemyLineLengthSq;
+			rate = SchoolUtility::Clamp(rate, 0.0f, 1.0f);
+		}
+
+		const VECTOR nearest =
+			VAdd(enemyStart, VScale(enemyLine, rate));
+		VECTOR pushDir = VSub(playerCenter, nearest);
+		float distanceSq = VDot(pushDir, pushDir);
+		if (distanceSq <= 0.0001f)
+		{
+			pushDir = VSub(transform_.pos, enemyCollider->GetCenter());
+			pushDir.y = 0.0f;
+			distanceSq = VDot(pushDir, pushDir);
+		}
+		if (distanceSq <= 0.0001f)
+		{
+			pushDir = VGet(1.0f, 0.0f, 0.0f);
+			distanceSq = 1.0f;
+		}
+
+		const float distance = sqrtf(distanceSq);
+		const float overlap =
+			playerCollider->GetRadius() +
+			enemyCollider->GetRadius() - distance;
+		if (overlap <= 0.0f) continue;
+
+		pushDir = VScale(pushDir, 1.0f / distance);
+		transform_.pos =
+			VAdd(transform_.pos, VScale(pushDir, overlap + 0.1f));
+		isPushed = true;
+	}
+	return isPushed;
 }
 
 void Player::DrawDebug(void)

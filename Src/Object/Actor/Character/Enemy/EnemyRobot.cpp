@@ -5,6 +5,7 @@
 #include "../../../Common/AnimationController.h"
 #include "../../../Collider/ColliderLine.h"
 #include "../../../Collider/ColliderCapsule.h"
+#include "../../../Collider/ColliderCircle.h"
 #include "../../../Collider/ColliderCone.h"
 #include "../../UI/UISurprise.h"
 #include "../../../Shoot/ShotBase.h"
@@ -37,7 +38,7 @@ void EnemyRobot::Draw(void)
 	if (!isVisible_) return;
 
 	// 基底クラスの描画処理
-	CharacterBase::Draw();
+	EnemyBase::Draw();
 
 	uiSurprise_->Draw();
 
@@ -121,6 +122,24 @@ void EnemyRobot::InitCollider(void)
 		COL_CAPSULE_DOWN_LOCAL_POS, COL_CAPSULE_RADIUS);
 	ownColliders_.emplace(
 		static_cast<int>(COLLIDER_TYPE::CAPSULE), colCapsule);
+
+	// キック攻撃用カプセルコライダ
+	ColliderCapsule* colAttack = new ColliderCapsule(
+		ColliderBase::TAG::ENEMY_ATTACK, &transform_,
+		COL_ATTACK_TOP_LOCAL_POS,
+		COL_ATTACK_DOWN_LOCAL_POS, COL_ATTACK_RADIUS);
+	colAttack->SetValid(false);
+	AddAttackCollider(colAttack);
+
+#pragma region 密着時のキック攻撃用XZ円形コライダ
+#if 0
+	ColliderCircle* colCloseAttack = new ColliderCircle(
+		ColliderBase::TAG::ENEMY_ATTACK, &transform_,
+		COL_CLOSE_ATTACK_LOCAL_POS, COL_CLOSE_ATTACK_RADIUS);
+	colCloseAttack->SetValid(false);
+	AddAttackCollider(colCloseAttack);
+#endif
+#pragma endregion
 
 	// 視野判定用円錐コライダ
 	ColliderCone* colCone = new ColliderCone(
@@ -211,6 +230,23 @@ void EnemyRobot::UpdateProcess(void)
 	// 状態別更新
 	stateUpdate_();
 
+	// キックアニメーションの有効範囲だけ攻撃判定を有効にする
+	bool isKickCollision = false;
+	if (state_ == STATE::ATTACK_KICK
+		&& animController_->GetPlayType() == static_cast<int>(ANIM_TYPE::KICK))
+	{
+		const AnimationController::Animation& anim =
+			animController_->GetPlayAnim();
+		if (anim.totalTime > 0.0f)
+		{
+			float playRate = anim.step / anim.totalTime;
+			isKickCollision =
+				playRate >= KICK_COLLISION_START_RATE
+				&& playRate <= KICK_COLLISION_END_RATE;
+		}
+	}
+	SetAllAttackCollidersValid(isKickCollision);
+
 	// 弾の更新
 	shots_->Update(scnMng_.GetDeltaTime());
 }
@@ -218,6 +254,12 @@ void EnemyRobot::UpdateProcess(void)
 void EnemyRobot::UpdateProcessPost(void)
 {
 	EnemyBase::UpdateProcessPost();
+
+	// 弾とプレイヤーの衝突判定
+	if (shots_->Collision(GetPlayerCapsuleCollider()))
+	{
+		ReservePlayerDamage(1);
+	}
 
 	// 警戒時「！」UI
 	uiSurprise_->Update();
@@ -442,16 +484,25 @@ void EnemyRobot::ChangeStateAttackKick(void)
 	{
 		// ふぉーるばっく
 		ChangeState(STATE::THINK);
+		return;
 	}
 
 	// プレイヤーを向く
 	moveDir_ = GetLookPlayerXZ();
 
-	// クールタイムを設定
+	// 前回の移動量をリセット
+	movePow_ = SchoolUtility::VECTOR_ZERO;
+
+	// 既存の攻撃時間を設定
 	step_ = ATTACK_COOLTIME;
+
+	// 前回の攻撃判定をリセット
+	SetAllAttackCollidersValid(false);
 
 	// キックアニメーション再生
 	animController_->Play(static_cast<int>(ANIM_TYPE::KICK), false);
+	// 同じKICK状態へ入り直した場合も先頭から再生する
+	animController_->ResetPlayStep();
 }
 
 void EnemyRobot::ChangeStateAttackShoot(void)
@@ -686,15 +737,18 @@ void EnemyRobot::UpdateAttackKick(void)
 {
 	step_ -= scnMng_.GetDeltaTime();
 
-	// 一度攻撃して、クールタイム消費後に…
+	// 一度攻撃して、攻撃時間消費後に次の行動へ
 	if (step_ < 0.0f)
 	{
-		// まだ攻撃範囲にいたら繰り返す
-		if (GetDistanceToP() <= ATTACK_RANGE) ChangeState(STATE::ATTACK_KICK);
-
-		// 離れているなら再び追跡を開始する
-		else ChangeState(STATE::CHASE);
-
+		// まだ攻撃範囲にいたらキックを先頭から繰り返す
+		if (GetDistanceToP() <= ATTACK_RANGE)
+		{
+			ChangeState(STATE::ATTACK_KICK);
+		}
+		else
+		{
+			ChangeState(STATE::CHASE);
+		}
 		return;
 	}
 
