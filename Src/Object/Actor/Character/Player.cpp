@@ -41,9 +41,12 @@ VECTOR Player::GetMoveInputDir(void)
 
 Player::Player(InputBinder* inputBinder)
 	:CharacterBase(),
-	weapon_(nullptr),
+	hp_(INIT_MAX_HP),
+	maxHp_(INIT_MAX_HP),
+	damageInvincibleStep_(0.0f),
+	inputBinder_(inputBinder),
 	state_(STATE::NONE),
-	inputBinder_(inputBinder)
+	weapon_(nullptr)
 {
 	
 }
@@ -76,6 +79,48 @@ void Player::Draw()
 	weapon_->Draw();
 }
 
+void Player::DrawUI(void) const
+{
+	// 画面左下を基準に表示
+	const int hpBarY = Application::SCREEN_SIZE_Y - 70;
+
+	// HPバー背景
+	DrawBox(
+		HP_BAR_X, hpBarY,
+		HP_BAR_X + HP_BAR_WIDTH, hpBarY + HP_BAR_HEIGHT,
+		GetColor(32, 32, 32), true);
+
+	// 現在HPの割合
+	float hpRate = 0.0f;
+	if (maxHp_ > 0)
+	{
+		hpRate = static_cast<float>(hp_) / static_cast<float>(maxHp_);
+	}
+
+	// 残りHPが30%以下なら赤、それ以外は緑で表示
+	int hpColor = hpRate <= 0.3f
+		? GetColor(220, 40, 40)
+		: GetColor(40, 200, 80);
+	int hpBarRight = HP_BAR_X + static_cast<int>(HP_BAR_WIDTH * hpRate);
+	if (hpBarRight > HP_BAR_X)
+	{
+		DrawBox(
+			HP_BAR_X, hpBarY,
+			hpBarRight, hpBarY + HP_BAR_HEIGHT,
+			hpColor, true);
+	}
+
+	// 枠と数値
+	DrawBox(
+		HP_BAR_X, hpBarY,
+		HP_BAR_X + HP_BAR_WIDTH, hpBarY + HP_BAR_HEIGHT,
+		GetColor(255, 255, 255), false);
+	DrawFormatString(
+		HP_BAR_X, hpBarY + HP_BAR_HEIGHT + 6,
+		GetColor(255, 255, 255),
+		"HP %d / %d", hp_, maxHp_);
+}
+
 void Player::Release()
 {
 }
@@ -83,6 +128,33 @@ void Player::Release()
 WeaponBase* Player::GetWeapon(void)
 {
 	return weapon_;
+}
+
+bool Player::Damage(int damage)
+{
+	if (damage <= 0 || IsDead() || IsDamageInvincible()) return false;
+
+	hp_ -= damage;
+	if (hp_ < 0) hp_ = 0;
+
+	damageInvincibleStep_ = DAMAGE_INVINCIBLE_TIME;
+	return true;
+}
+
+void Player::Heal(int heal)
+{
+	if (heal <= 0 || IsDead()) return;
+
+	hp_ += heal;
+	if (hp_ > maxHp_) hp_ = maxHp_;
+}
+
+void Player::IncreaseMaxHp(int amount)
+{
+	if (amount <= 0) return;
+
+	maxHp_ += amount;
+	hp_ += amount;
 }
 
 void Player::InitLoad(void)
@@ -184,6 +256,16 @@ void Player::InitPost(void)
 
 void Player::UpdateProcess(void)
 {
+	// ダメージ無敵時間を更新
+	if (damageInvincibleStep_ > 0.0f)
+	{
+		damageInvincibleStep_ -= scnMng_.GetDeltaTime();
+		if (damageInvincibleStep_ < 0.0f)
+		{
+			damageInvincibleStep_ = 0.0f;
+		}
+	}
+
 	// 現在のステートの更新
 	stateUpdate_();
 }

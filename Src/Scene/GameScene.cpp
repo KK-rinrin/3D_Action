@@ -92,6 +92,12 @@ void GameScene::Update(void)
 	stage_->Update();
 	player_->Update();
 	enemy_->Update();
+
+	// プレイヤーのHPが0になったらゲームオーバーへ移行
+	if (player_->IsDead())
+	{
+		sceMng_.ChangeScene(SceneManager::SCENE_ID::GAME_OVER);
+	}
 }
 
 void GameScene::Draw(void)
@@ -121,12 +127,14 @@ void GameScene::Draw(void)
 		stage_->Draw();
 		enemy_->Draw();
 		shadowRenderer_->EndApplyShadowMap();
+		player_->DrawUI();
 		return;
 	}
 
 	player_->Draw();
 	stage_->Draw();
 	enemy_->Draw();
+	player_->DrawUI();
 }
 
 void GameScene::Release(void)

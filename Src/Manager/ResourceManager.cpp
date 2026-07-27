@@ -39,6 +39,10 @@ void ResourceManager::Init(void)
 	res = new RES(RES_T::IMG, PATH_IMG + "PushSpace.png");
 	resourcesMap_.emplace(SRC::TITLE_PUSH_START, res);
 
+	// ゲームオーバー画像
+	res = new RES(RES_T::IMG, PATH_IMG + "GameOver.png");
+	resourcesMap_.emplace(SRC::GAME_OVER_IMG, res);
+
 	// でかい惑星のモデル
 	res = new RES(RES_T::MODEL, PATH_MDL + "Stage/PitfallPlanet/PitfallPlanet.mv1");
 	resourcesMap_.emplace(SRC::BIG_PLANET, res);

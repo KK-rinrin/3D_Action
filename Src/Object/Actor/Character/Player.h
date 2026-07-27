@@ -36,12 +36,40 @@ public:
 	~Player();
 
 	void Draw() override;
+	// プレイヤーUIを描画
+	void DrawUI(void) const;
 	void Release() override;
 
 	// 武器を取得
 	WeaponBase* GetWeapon(void);
 
+	// ダメージを受ける
+	bool Damage(int damage);
+	// HPを回復
+	void Heal(int heal);
+	// 最大HPを増加
+	void IncreaseMaxHp(int amount);
+
+	// 現在HPを取得
+	int GetHp(void) const { return hp_; }
+	// 最大HPを取得
+	int GetMaxHp(void) const { return maxHp_; }
+	// 戦闘不能判定
+	bool IsDead(void) const { return hp_ <= 0; }
+	// ダメージ無敵中か
+	bool IsDamageInvincible(void) const { return damageInvincibleStep_ > 0.0f; }
+
 private:
+	// 初期最大HP
+	static constexpr int INIT_MAX_HP = 5;
+	// ダメージ無敵時間
+	static constexpr float DAMAGE_INVINCIBLE_TIME = 1.0f;
+
+	// HPバー表示位置・サイズ
+	static constexpr int HP_BAR_X = 30;
+	static constexpr int HP_BAR_WIDTH = 300;
+	static constexpr int HP_BAR_HEIGHT = 24;
+
 	// 移動速度(通常)
 	static constexpr float SPEED_MOVE = 5.0f;
 	// 移動速度(ダッシュ)
@@ -214,6 +242,13 @@ private:
 	// 更新系
 	virtual void UpdateProcess(void) override;
 	virtual void UpdateProcessPost(void) override;
+
+	// 現在HP
+	int hp_;
+	// 最大HP
+	int maxHp_;
+	// ダメージ無敵残り時間
+	float damageInvincibleStep_;
 
 	// 操作
 	bool isDash_ = false;

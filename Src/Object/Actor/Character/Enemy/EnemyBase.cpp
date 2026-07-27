@@ -290,7 +290,7 @@ void EnemyBase::CollisionWeapon(void)
 			if (isKnockBack)
 			{
 				VECTOR diff = VSub(
-					weaponCol->GetCenter(), colMyCap->GetCenter());
+					colMyCap->GetCenter(), weaponCol->GetCenter());
 
 				knockBackParam_.Init(
 					diff, 3000.0f * weaponCol->GetKnockBackPow());
