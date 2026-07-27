@@ -305,6 +305,13 @@ void EnemyRat::UpdateIdle(void)
 
 void EnemyRat::UpdateWander(void)
 {
+	if (ConsumeObstacleStuck())
+	{
+		// 障害物に詰まったら別の行動と移動方向を選び直す
+		ChangeState(STATE::THINK);
+		return;
+	}
+
 	step_ -= scnMng_.GetDeltaTime();
 	if (step_ < 0.0f)
 	{
@@ -312,6 +319,8 @@ void EnemyRat::UpdateWander(void)
 		ChangeState(STATE::THINK);
 		return;
 	}
+
+	ReserveObstacleStuckCheck(moveDir_);
 
 	// 移動量(方向×スピード)
 	movePow_ = VScale(moveDir_, moveSpeed_);
@@ -337,7 +346,7 @@ void EnemyRat::UpdateMoveInRange(void)
 		return;
 	}
 
-	moveDir_ = VNorm(targetDir);
+	moveDir_ = GetObstacleAvoidMoveDir(targetDir);
 	movePow_ = VScale(moveDir_, moveSpeed_);
 }
 

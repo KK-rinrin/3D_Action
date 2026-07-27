@@ -129,6 +129,35 @@ protected:
 	// 追跡対象
 	const Transform* targetTransform_;
 
+	// 前方地面追従で上れる最大の高さ
+	static constexpr float GROUND_FOLLOW_MAX_STEP_HEIGHT = 30.0f;
+	// 前方地面追従で下へ吸着できる最大の高さ
+	static constexpr float GROUND_FOLLOW_MAX_SNAP_DOWN = 30.0f;
+	// 前方地面を探す線分の上下の余裕
+	static constexpr float GROUND_FOLLOW_PROBE_MARGIN = 10.0f;
+
+	// 障害物に詰まったと判定するまでの時間
+	static constexpr float OBSTACLE_STUCK_TIME = 0.25f;
+	// 移動できたとみなすXZ平面上の距離
+	static constexpr float OBSTACLE_MOVE_DISTANCE = 0.1f;
+	// 障害物を迂回する時間
+	static constexpr float OBSTACLE_AVOID_TIME = 0.6f;
+
+	// 障害物への詰まり判定時間
+	float obstacleStuckStep_;
+	// 障害物の迂回時間
+	float obstacleAvoidStep_;
+	// 障害物の迂回方向(-1.0f:左、1.0f:右)
+	float obstacleAvoidSide_;
+	// このフレームに進もうとした方向
+	VECTOR obstacleMoveDir_;
+	// このフレームに障害物への詰まりを調べるか
+	bool isObstacleMoveCheck_;
+	// 詰まったときに迂回するか
+	bool canObstacleAvoid_;
+	// 障害物に詰まったか
+	bool isObstacleStuck_;
+
 	// 状態管理(状態遷移時初期処理)
 	std::map<int, std::function<void(void)>> stateChanges_;
 
@@ -160,12 +189,23 @@ protected:
 
 	// 更新系
 	virtual void UpdateProcessPost(void) override {}
+	// 衝突判定前準備
+	void CollisionReserve(void) override;
 
 	// 個別の衝突判定
 	virtual void CollisionPost(void) override;
 
 	// 移動可能範囲判定
 	bool InMovableRange(void) const;
+
+	// 障害物を考慮した移動方向を取得
+	VECTOR GetObstacleAvoidMoveDir(const VECTOR& targetDir);
+
+	// 障害物への詰まり判定を予約
+	void ReserveObstacleStuckCheck(const VECTOR& moveDir);
+
+	// 障害物への詰まり判定を取得してリセット
+	bool ConsumeObstacleStuck(void);
 
 	// 状態遷移
 	void ChangeState(int state);
@@ -178,6 +218,9 @@ protected:
 
 	// 衝突判定(プレイヤーの武器)
 	void CollisionWeapon(void);
+
+	// 障害物への詰まりと迂回を更新
+	void UpdateObstacleAvoidance(void);
 
 	// ダメージ無効判定
 	virtual bool IsInValidDamage(void) const = 0;

@@ -577,6 +577,7 @@ void EnemyRobot::UpdatePatrol(void)
 	}
 	// 巡回ルートの移動方向を設定する
 	SetMoveDirPatrol();
+	moveDir_ = GetObstacleAvoidMoveDir(moveDir_);
 
 	// 移動量の計算
 	movePow_ = VScale(moveDir_, moveSpeed_);
@@ -674,8 +675,8 @@ void EnemyRobot::UpdateChase(void)
 		return;
 	}
 
-	// プレイヤーへの方向を適用
-	moveDir_ = VNorm(targetDir);
+	// プレイヤーへの方向を適用し、詰まっている間だけ斜めに迂回する
+	moveDir_ = GetObstacleAvoidMoveDir(targetDir);
 
 	// 移動量
 	movePow_ = VScale(moveDir_, moveSpeed_);

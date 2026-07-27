@@ -7,6 +7,9 @@ class ColliderModel;
 class ColliderCapsule : public ColliderBase
 {
 public:
+	// 歩行可能な地面とみなす法線のY成分
+	static constexpr float MIN_WALKABLE_GROUND_NORMAL_Y = 0.7f;
+
 	// コンストラクタ
 	ColliderCapsule(
 		TAG tag, const Transform* follow,
@@ -50,7 +53,8 @@ public:
 	void PushBackAlongNormal(
 		const ColliderModel* colliderModel, Transform& transform,
 		int maxTryCnt, float pushDistance,
-		bool isExclude = false, bool isTarget = false) const;
+		bool isExclude = false, bool isTarget = false,
+		bool isIgnoreWalkableGround = false) const;
 
 	// 衝突判定(対点)
 	bool IsHitPoint(const VECTOR& pos) const;

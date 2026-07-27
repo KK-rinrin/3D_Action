@@ -216,7 +216,9 @@ void CharacterBase::CollisionCapsule(void)
 		if (colliderModel == nullptr) continue;
 
 		colliderCapsule->PushBackAlongNormal(
-			colliderModel, transform_, CNT_TRY_COLLISION, COLLISION_BACK_DIS, true, false);
+			colliderModel, transform_, CNT_TRY_COLLISION, COLLISION_BACK_DIS,
+			true, false,
+			colliderCapsule->GetTag() == ColliderBase::TAG::ENEMY);
 
 	}
 }

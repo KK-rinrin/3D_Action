@@ -6,6 +6,7 @@ InputBinder::InputBinder(InputManager::JOYPAD_NO padNo)
 	inputIns_(InputManager::GetInstance()),
 	padNo_(padNo),
 	dir_(SchoolUtility::VECTOR_ZERO),
+	rotPowCamera_(SchoolUtility::VECTOR_ZERO),
 	isDash_(false),
 	isJump_(false),
 	isTrgJump_(false),
@@ -38,8 +39,12 @@ void InputBinder::Init(void)
 	actionPadMap_.emplace(ACTION::ATTACK,
 		static_cast<int>(InputManager::JOYPAD_BTN::LEFT));
 }
+
 void InputBinder::Update(void)
 {
+	// カメラ回転量は毎フレームの入力差分として扱う
+	rotPowCamera_ = SchoolUtility::VECTOR_ZERO;
+
 	// キーボード
 	UpdateKeyboard();
 
@@ -50,6 +55,7 @@ void InputBinder::Update(void)
 		UpdatePad();
 	}
 }
+
 void InputBinder::UpdateKeyboard(void)
 {
 	// 入力方向のリセット
@@ -110,6 +116,7 @@ void InputBinder::UpdateKeyboard(void)
 	// 攻撃
 	isAttack_ = inputIns_.IsTrgDown(actionKeyboardMap_.at(ACTION::ATTACK));
 }
+
 void InputBinder::UpdatePad(void)
 {
 	// 接続されているゲームパッド１の情報を取得
@@ -119,11 +126,9 @@ void InputBinder::UpdatePad(void)
 	dir_ = inputIns_.GetDirectionXZAKey(padState.AKeyLX, padState.AKeyLY);
 
 	// アナログキーの入力値からカメラ回転量を取得(x左右 z前後)
-	rotPowCamera_ = SchoolUtility::VECTOR_ZERO;
-	
 	VECTOR rot = inputIns_.GetDirectionXZAKey(padState.AKeyRX, padState.AKeyRY);
-	rotPowCamera_.y = rot.x * ROT_POW_RAD;
-	rotPowCamera_.x = rot.z * ROT_POW_RAD;
+	rotPowCamera_.y += rot.x * ROT_POW_RAD;
+	rotPowCamera_.x += rot.z * ROT_POW_RAD;
 
 	// ダッシュ
 	isDash_ = inputIns_.IsPadBtnNew(padNo_,
@@ -140,4 +145,3 @@ void InputBinder::UpdatePad(void)
 	isAttack_ = inputIns_.IsPadBtnTrgDown(padNo_,
 		static_cast<InputManager::JOYPAD_BTN>(actionPadMap_.at(ACTION::ATTACK)));
 }
-

@@ -2,6 +2,7 @@
 #include "../../../../Utility/SchoolUtility.h"
 #include "../../../Collider/ColliderSphere.h"
 #include "../../../Collider/ColliderCapsule.h"
+#include "../../../Collider/ColliderModel.h"
 #include "../../../Common/AnimationController.h"
 #include "../../../../Manager/SceneManager.h"
 
@@ -15,6 +16,13 @@ EnemyBase::EnemyBase(const EnemyBase::EnemyData& data)
 	isHit_(false),
 	isVisible_(true),
 	targetTransform_(nullptr),
+	obstacleStuckStep_(0.0f),
+	obstacleAvoidStep_(0.0f),
+	obstacleAvoidSide_(1.0f),
+	obstacleMoveDir_(SchoolUtility::VECTOR_ZERO),
+	isObstacleMoveCheck_(false),
+	canObstacleAvoid_(false),
+	isObstacleStuck_(false),
 	damagedStep_(0.0f)
 {
 	// 初期座標の設定
@@ -50,8 +58,101 @@ void EnemyBase::InitPost(void)
 	InitBlink();
 }
 
+void EnemyBase::CollisionReserve(void)
+{
+	// この処理では、横移動を適用する前に移動予定地点の地面を調べ、
+	// 上り坂や下り坂に合わせるためのY方向移動量を先に用意する
+
+	// ノックバックなどY方向の移動中は地面へ追従させない
+	if (fabsf(movePow_.y) > SchoolUtility::kEpsilonNormalSqrt) return;
+
+	// 地面を探す方向として、移動量からXZ成分だけを取り出す
+	VECTOR moveXZ = movePow_;
+	moveXZ.y = 0.0f;
+
+	// 待機中など横移動していない場合は前方を調べる必要がない
+	if (SchoolUtility::SqrMagnitude(moveXZ)
+		<= SchoolUtility::kEpsilonNormalSqrt)
+	{
+		return;
+	}
+
+	// 現在座標に今回の横移動量を加え、移動予定地点を求める
+	VECTOR probePos = VAdd(transform_.pos, moveXZ);
+
+	// 上り坂や少し高い段差も線分に含められるよう、
+	// 移動予定地点より上に探索線分の始点を置く
+	VECTOR probeStart = probePos;
+	probeStart.y += GROUND_FOLLOW_MAX_STEP_HEIGHT
+		+ GROUND_FOLLOW_PROBE_MARGIN;
+
+	// 下り坂でも地面を見失わないよう、
+	// 移動予定地点より下に探索線分の終点を置く
+	VECTOR probeEnd = probePos;
+	probeEnd.y -= GROUND_FOLLOW_MAX_SNAP_DOWN
+		+ GROUND_FOLLOW_PROBE_MARGIN;
+
+	// 複数のステージモデルを調べた結果から、使用する地面を保持する
+	bool isFoundGround = false;
+	MV1_COLL_RESULT_POLY groundHit = {};
+	for (const auto& hitCol : hitColliders_)
+	{
+		// 無効なコライダとステージ以外のコライダは調べない
+		if (hitCol == nullptr || !hitCol->IsValid()) continue;
+		if (hitCol->GetTag() != ColliderBase::TAG::STAGE) continue;
+
+		// 地形ポリゴンとの線分判定ができるモデルコライダだけを使う
+		if (hitCol->GetShape() != ColliderBase::SHAPE::MODEL) continue;
+
+		const ColliderModel* colliderModel =
+			dynamic_cast<const ColliderModel*>(hitCol);
+		if (colliderModel == nullptr) continue;
+
+		// 探索線分に当たった中から、始点に一番近いポリゴンを取得する
+		MV1_COLL_RESULT_POLY hit = colliderModel->GetNearestHitPolyLine(
+			probeStart, probeEnd, true, false);
+
+		// 地面が見つからなければ次のステージモデルを調べる
+		if (!hit.HitFlag) continue;
+
+		// 法線のY成分が小さい急斜面や壁は歩行可能な地面として扱わない
+		if (hit.Normal.y < ColliderCapsule::MIN_WALKABLE_GROUND_NORMAL_Y)
+		{
+			continue;
+		}
+
+		// 複数の地面が重なる場合は一番上の面を使う
+		if (!isFoundGround || hit.HitPosition.y > groundHit.HitPosition.y)
+		{
+			isFoundGround = true;
+			groundHit = hit;
+		}
+	}
+
+	// 移動予定地点に歩行可能な地面がなければY移動量を変更しない
+	if (!isFoundGround) return;
+
+	// 重力判定と同じ押し戻し距離だけ地面から浮かせた目標Y座標を作る
+	const float targetY = groundHit.HitPosition.y + COLLISION_BACK_DIS;
+	// 現在のY座標から目標Y座標までに必要な移動量を求める
+	const float heightDiff = targetY - transform_.pos.y;
+
+	// 一度に上れる高さ、または下へ吸着できる高さを超える場合は追従しない
+	if (heightDiff > GROUND_FOLLOW_MAX_STEP_HEIGHT
+		|| heightDiff < -GROUND_FOLLOW_MAX_SNAP_DOWN)
+	{
+		return;
+	}
+
+	// 横移動と同時に前方の地面の高さへ合わせる
+	movePow_.y = heightDiff;
+}
+
 void EnemyBase::CollisionPost(void)
 {
+	// 障害物への詰まりと迂回を更新
+	UpdateObstacleAvoidance();
+
 	// 衝突判定(プレイヤーの武器)
 	CollisionWeapon();
 }
@@ -77,8 +178,69 @@ bool EnemyBase::InMovableRange(void) const
 	return ret;
 }
 
+VECTOR EnemyBase::GetObstacleAvoidMoveDir(const VECTOR& targetDir)
+{
+	VECTOR dir = targetDir;
+	dir.y = 0.0f;
+	if (SchoolUtility::SqrMagnitude(dir) <= SchoolUtility::kEpsilonNormalSqrt)
+	{
+		return SchoolUtility::VECTOR_ZERO;
+	}
+
+	dir = VNorm(dir);
+
+	if (obstacleAvoidStep_ > 0.0f)
+	{
+		// 正面へ進む成分を捨て、選んだ側の真横へ移動する
+		VECTOR sideDir = VGet(dir.z, 0.0f, -dir.x);
+		dir = VScale(sideDir, obstacleAvoidSide_);
+	}
+
+	obstacleMoveDir_ = dir;
+	isObstacleMoveCheck_ = true;
+	canObstacleAvoid_ = true;
+	return dir;
+}
+
+void EnemyBase::ReserveObstacleStuckCheck(const VECTOR& moveDir)
+{
+	// 高低差を無視して、XZ平面上の移動方向だけを判定に使う
+	obstacleMoveDir_ = moveDir;
+	obstacleMoveDir_.y = 0.0f;
+
+	// 移動方向がなければ詰まり判定を行わない
+	if (SchoolUtility::SqrMagnitude(obstacleMoveDir_)
+		<= SchoolUtility::kEpsilonNormalSqrt)
+	{
+		return;
+	}
+	obstacleMoveDir_ = VNorm(obstacleMoveDir_);
+
+	// 衝突処理後に、指定方向へ実際に進めたかを確認する
+	isObstacleMoveCheck_ = true;
+
+	// 徘徊では迂回せず、詰まったことだけを派生クラスへ通知する
+	canObstacleAvoid_ = false;
+}
+
+bool EnemyBase::ConsumeObstacleStuck(void)
+{
+	if (!isObstacleStuck_) return false;
+
+	isObstacleStuck_ = false;
+	return true;
+}
+
 void EnemyBase::ChangeState(int state)
 {
+	// 前の行動で残った詰まり判定や迂回を持ち越さない
+	obstacleStuckStep_ = 0.0f;
+	obstacleAvoidStep_ = 0.0f;
+	obstacleMoveDir_ = SchoolUtility::VECTOR_ZERO;
+	isObstacleMoveCheck_ = false;
+	canObstacleAvoid_ = false;
+	isObstacleStuck_ = false;
+
 	stateBase_ = state;
 
 	// 各状態遷移の初期処理
@@ -142,6 +304,68 @@ void EnemyBase::CollisionWeapon(void)
 			}
 		}
 	}
+}
+
+void EnemyBase::UpdateObstacleAvoidance(void)
+{
+	// 迂回開始時に決めた側へ、指定時間だけ進み続ける
+	const bool isAvoiding = obstacleAvoidStep_ > 0.0f;
+	if (obstacleAvoidStep_ > 0.0f)
+	{
+		obstacleAvoidStep_ -= scnMng_.GetDeltaTime();
+		if (obstacleAvoidStep_ < 0.0f)
+		{
+			obstacleAvoidStep_ = 0.0f;
+		}
+	}
+
+	// 迂回中に再判定すると短時間で左右が入れ替わるため、
+	// 迂回が終わるまでは詰まり時間を数え直さない
+	if (isAvoiding)
+	{
+		obstacleStuckStep_ = 0.0f;
+		isObstacleMoveCheck_ = false;
+		canObstacleAvoid_ = false;
+		return;
+	}
+
+	if (!isObstacleMoveCheck_)
+	{
+		obstacleStuckStep_ = 0.0f;
+		canObstacleAvoid_ = false;
+		return;
+	}
+
+	VECTOR moved = VSub(transform_.pos, prevPos_);
+	moved.y = 0.0f;
+	const float forwardDistance = VDot(moved, obstacleMoveDir_);
+
+	if (forwardDistance <= OBSTACLE_MOVE_DISTANCE)
+	{
+		obstacleStuckStep_ += scnMng_.GetDeltaTime();
+		if (obstacleStuckStep_ >= OBSTACLE_STUCK_TIME)
+		{
+			obstacleStuckStep_ = 0.0f;
+
+			if (canObstacleAvoid_)
+			{
+				// 同じ側で再び詰まった場合も抜けられるよう左右を交互に試す
+				obstacleAvoidSide_ *= -1.0f;
+				obstacleAvoidStep_ = OBSTACLE_AVOID_TIME;
+			}
+			else
+			{
+				isObstacleStuck_ = true;
+			}
+		}
+	}
+	else
+	{
+		obstacleStuckStep_ = 0.0f;
+	}
+
+	isObstacleMoveCheck_ = false;
+	canObstacleAvoid_ = false;
 }
 
 void EnemyBase::UpdateKnockBack(void)

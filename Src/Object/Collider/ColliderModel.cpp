@@ -114,7 +114,7 @@ MV1_COLL_RESULT_POLY ColliderModel::GetNearestHitPolyLine(const VECTOR& start, c
 		//hitPoly.HitFlag = true;
 		
 		// ‹——£”»’è
-		int dist = SchoolUtility::Distance(start, tmpTransform.pos);
+		double dist = SchoolUtility::Distance(start, hit.HitPosition);
 		if (dist < minDist)
 		{
 			// ’Ç]‘ÎÛ‚Éˆê”Ô‹ß‚¢Õ“Ë“_‚ð—Dæ

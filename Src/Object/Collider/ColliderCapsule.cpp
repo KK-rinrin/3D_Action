@@ -196,7 +196,7 @@ void ColliderCapsule::DrawDebug(int color)
 void ColliderCapsule::PushBackAlongNormal(
 	const ColliderModel* colliderModel, Transform& transform,
 	int maxTryCnt, float pushDistance,
-	bool isExclude, bool isTarget) const
+	bool isExclude, bool isTarget, bool isIgnoreWalkableGround) const
 {
 	// モデルとカプセルの衝突判定
 	auto hits = MV1CollCheck_Capsule(
@@ -216,6 +216,13 @@ void ColliderCapsule::PushBackAlongNormal(
 
 		// 対象フレーム以外は無視する
 		if (isTarget && !colliderModel->IsTargetFrame(hitPoly.FrameIndex))
+		{
+			continue;
+		}
+
+		// 敵の移動では歩行可能な地面を重力判定に任せる
+		if (isIgnoreWalkableGround
+			&& hitPoly.Normal.y >= MIN_WALKABLE_GROUND_NORMAL_Y)
 		{
 			continue;
 		}

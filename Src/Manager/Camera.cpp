@@ -173,9 +173,10 @@ void Camera::SyncFollow(void)
 
 void Camera::ProcessRot(bool isLimit)
 {
-	angles_ = inputBinder_->GetRotPowCamera();
+	// InputBinderから受け取った1フレーム分の回転量を現在角度へ加算
+	angles_ = VAdd(angles_, inputBinder_->GetRotPowCamera());
 
-	// 角度制限
+	// 加算直後に制限し、入力側へ制限外の角度を蓄積させない
 	if (isLimit && angles_.x < -LIMIT_X_DW_RAD)
 	{
 		angles_.x = -LIMIT_X_DW_RAD;
