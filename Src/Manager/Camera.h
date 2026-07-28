@@ -98,6 +98,9 @@ public:
 	// 追従対象の設定
 	void SetFollow(const Transform* follow);
 
+	// 指定フレームの間、一定間隔でランダムな方向へ画面を揺らす
+	void StartShake(int durationFrame, int updateIntervalFrame, float power);
+
 private:
 	// 衝突時の押し戻し試行回数
 	static constexpr int CNT_TRY_COLLISION_CAMERA = 30;
@@ -114,6 +117,13 @@ private:
 
 	// カメラの更新前位置
 	VECTOR prePos_;
+
+	// 画面揺れ
+	int shakeRemainFrame_;
+	int shakeTotalFrame_;
+	int shakeUpdateIntervalFrame_;
+	float shakePower_;
+	VECTOR shakeOffset_;
 
 	// カメラが追従対象とするTransform
 	const Transform* followTransform_;

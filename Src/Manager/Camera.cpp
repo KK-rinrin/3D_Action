@@ -1,5 +1,6 @@
 #include <DxLib.h>
 #include <EffekseerForDXLib.h>
+#include <cmath>
 #include "../Utility/SchoolUtility.h"
 #include "../Manager/InputBinder.h"
 #include "../Object/Common/Transform.h"
@@ -9,13 +10,18 @@
 
 Camera::Camera(InputBinder* inputBinder)
 	:
+	prePos_(SchoolUtility::VECTOR_ZERO),
+	shakeRemainFrame_(0),
+	shakeTotalFrame_(0),
+	shakeUpdateIntervalFrame_(1),
+	shakePower_(0.0f),
+	shakeOffset_(SchoolUtility::VECTOR_ZERO),
 	followTransform_(nullptr),
+	inputBinder_(inputBinder),
 	mode_(MODE::NONE),
 	angles_(SchoolUtility::VECTOR_ZERO),
 	rotY_(Quaternion::Identity()),
-	targetPos_(SchoolUtility::VECTOR_ZERO),
-	prePos_(SchoolUtility::VECTOR_ZERO),
-	inputBinder_(inputBinder)
+	targetPos_(SchoolUtility::VECTOR_ZERO)
 {
 	// DxLibの初期設定では、
 	// カメラの位置が x = 320.0f, y = 240.0f, z = (画面のサイズによって変化)、
@@ -53,10 +59,33 @@ void Camera::SetBeforeDraw(void)
 		break;
 	}
 
+	VECTOR drawPos = transform_.pos;
+	VECTOR drawTargetPos = targetPos_;
+	if (shakeRemainFrame_ > 0)
+	{
+		const int elapsedFrame =
+			shakeTotalFrame_ - shakeRemainFrame_;
+		if (elapsedFrame % shakeUpdateIntervalFrame_ == 0)
+		{
+			const float angle =
+				static_cast<float>(GetRand(359)) * DX_PI_F / 180.0f;
+			const VECTOR shakeRight =
+				VScale(transform_.quaRot.GetRight(), cosf(angle));
+			const VECTOR shakeUp =
+				VScale(transform_.quaRot.GetUp(), sinf(angle));
+			shakeOffset_ =
+				VScale(VAdd(shakeRight, shakeUp), shakePower_);
+		}
+
+		drawPos = VAdd(drawPos, shakeOffset_);
+		drawTargetPos = VAdd(drawTargetPos, shakeOffset_);
+		--shakeRemainFrame_;
+	}
+
 	// カメラの設定(位置と注視点による制御)
 	SetCameraPositionAndTargetAndUpVec(
-		transform_.pos, 
-		targetPos_, 
+		drawPos,
+		drawTargetPos,
 		transform_.quaRot.GetUp()
 	);
 
@@ -76,6 +105,24 @@ void Camera::Release(void)
 void Camera::SetFollow(const Transform* follow)
 {
 	followTransform_ = follow;
+}
+
+void Camera::StartShake(
+	int durationFrame, int updateIntervalFrame, float power)
+{
+	if (durationFrame <= 0 || power <= 0.0f)
+	{
+		shakeRemainFrame_ = 0;
+		shakeOffset_ = SchoolUtility::VECTOR_ZERO;
+		return;
+	}
+
+	shakeRemainFrame_ = durationFrame;
+	shakeTotalFrame_ = durationFrame;
+	shakeUpdateIntervalFrame_ =
+		updateIntervalFrame > 0 ? updateIntervalFrame : 1;
+	shakePower_ = power;
+	shakeOffset_ = SchoolUtility::VECTOR_ZERO;
 }
 
 const VECTOR& Camera::GetPos(void) const

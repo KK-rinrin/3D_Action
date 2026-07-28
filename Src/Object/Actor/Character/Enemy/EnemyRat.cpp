@@ -1,7 +1,10 @@
+#include <cmath>
 #include "EnemyRat.h"
+#include "../../UI/UISurprise.h"
 #include "../../../../Manager/ResourceManager.h"
 #include "../../../Collider/ColliderLine.h"
 #include "../../../Collider/ColliderCapsule.h"
+#include "../../../Collider/ColliderModel.h"
 #include "../../../Common/AnimationController.h"
 #include "../../../../Utility/SchoolUtility.h"
 #include "../../../../Manager/SceneManager.h"
@@ -11,13 +14,40 @@ EnemyRat::EnemyRat(const EnemyBase::EnemyData& data)
 	EnemyBase(data),
 	state_(STATE::NONE),
 	step_(0.0f),
-	moveInRangeTargetPos_(SchoolUtility::VECTOR_ZERO)
+	moveInRangeTargetPos_(SchoolUtility::VECTOR_ZERO),
+	attackIndex_(0),
+	attackPhase_(ATTACK_PHASE::PREPARE),
+	canStartChase_(true),
+	isResumeChase_(false),
+	uiSurprise_(nullptr)
 {
 	knockBackParam_.weight = 50.0f;
 }
 
 EnemyRat::~EnemyRat(void)
 {
+	delete uiSurprise_;
+	uiSurprise_ = nullptr;
+}
+
+void EnemyRat::Draw(void)
+{
+	if (!isVisible_) return;
+
+	// 基底クラスの描画処理
+	EnemyBase::Draw();
+
+#ifdef _DEBUG
+	if (state_ != STATE::DEAD && state_ != STATE::END)
+	{
+		DrawViewRangeProjection();
+	}
+#endif // _DEBUG
+
+	if (uiSurprise_ != nullptr)
+	{
+		uiSurprise_->Draw();
+	}
 }
 
 void EnemyRat::InitLoad(void)
@@ -27,6 +57,11 @@ void EnemyRat::InitLoad(void)
 
 	// モデルの読み込み
 	transform_.modelId = MV1DuplicateModel(resMng_.Load(ResourceManager::SRC::ENEMY_RAT).handleId_);
+
+	// 「！」UIのロード
+	uiSurprise_ = new UISurprise(
+		&transform_, UI_LOCAL_HEIGHT, UI_BOUNCE_HEIGHT, UI_SIZE);
+	uiSurprise_->Init();
 }
 
 void EnemyRat::InitTransform(void)
@@ -56,11 +91,12 @@ void EnemyRat::InitCollider(void)
 		COL_CAPSULE_TOP_LOCAL_POS, COL_CAPSULE_DOWN_LOCAL_POS, COL_CAPSULE_RADIUS);
 	ownColliders_.emplace(static_cast<int>(COLLIDER_TYPE::CAPSULE), colCap);
 
-	// プレイヤーへの接触攻撃用カプセル
+	// ATTACK用カプセル
 	ColliderCapsule* colAttack = new ColliderCapsule(
 		ColliderBase::TAG::ENEMY_ATTACK, &transform_,
-		COL_CAPSULE_TOP_LOCAL_POS, COL_CAPSULE_DOWN_LOCAL_POS,
-		COL_CAPSULE_RADIUS);
+		COL_ATTACK_TOP_LOCAL_POS, COL_ATTACK_DOWN_LOCAL_POS,
+		COL_ATTACK_RADIUS);
+	colAttack->SetValid(false);
 	AddAttackCollider(colAttack);
 }
 
@@ -77,6 +113,15 @@ void EnemyRat::InitAnimation(void)
 	type = static_cast<int>(ANIM_TYPE::WALK);
 	animController_->AddInFbx(type, 30.0f, type);
 
+	// ATTACK前動作アニメ
+	animController_->AddInFbx(
+		ATTACK_PREPARE_ANIM_INDEX, 30.0f,
+		ATTACK_PREPARE_ANIM_INDEX);
+
+	// ATTACKアニメ
+	animController_->AddInFbx(
+		ATTACK_ANIM_INDEX, 30.0f, ATTACK_ANIM_INDEX);
+
 	// HITアニメ
 	type = static_cast<int>(ANIM_TYPE::HIT);
 	animController_->AddInFbx(type, 20.0f, type);
@@ -91,6 +136,14 @@ void EnemyRat::InitAnimation(void)
 void EnemyRat::InitPost(void)
 {
 	EnemyBase::InitPost();
+
+	// 攻撃データ
+	ATTACK attack;
+	attack.prepareAnimIndex = ATTACK_PREPARE_ANIM_INDEX;
+	attack.animIndex = ATTACK_ANIM_INDEX;
+	attack.collisionStartRate = 0.25f;
+	attack.collisionEndRate = 0.6f;
+	attacks_.emplace_back(attack);
 
 	// 状態遷移初期処理登録
 	stateChanges_.emplace(static_cast<int>(STATE::NONE),
@@ -107,6 +160,18 @@ void EnemyRat::InitPost(void)
 
 	stateChanges_.emplace(static_cast<int>(STATE::MOVE_IN_RANGE),
 		std::bind(&EnemyRat::ChangeStateMoveInRange, this));
+
+	stateChanges_.emplace(static_cast<int>(STATE::SURPRISE),
+		std::bind(&EnemyRat::ChangeStateSurprise, this));
+
+	stateChanges_.emplace(static_cast<int>(STATE::CHASE),
+		std::bind(&EnemyRat::ChangeStateChase, this));
+
+	stateChanges_.emplace(static_cast<int>(STATE::ATTACK),
+		std::bind(&EnemyRat::ChangeStateAttack, this));
+
+	stateChanges_.emplace(static_cast<int>(STATE::ESCAPE),
+		std::bind(&EnemyRat::ChangeStateEscape, this));
 
 	stateChanges_.emplace(static_cast<int>(STATE::KNOCKBACK),
 		std::bind(&EnemyRat::ChangeStateKnockBack, this));
@@ -126,18 +191,48 @@ void EnemyRat::InitPost(void)
 
 void EnemyRat::UpdateProcess(void)
 {
+	const bool isInView =
+		IsPlayerInViewRange(VIEW_RANGE, VIEW_ANGLE);
+	if (!isInView)
+	{
+		canStartChase_ = true;
+	}
+
+	if ((state_ == STATE::IDLE
+			|| state_ == STATE::WANDER
+			|| state_ == STATE::MOVE_IN_RANGE)
+		&& canStartChase_ && isInView)
+	{
+		canStartChase_ = false;
+		ChangeState(STATE::SURPRISE);
+		return;
+	}
+
 	// 状態別更新
 	stateUpdate_();
 
-	// 被ダメージ中と死亡中は接触攻撃を無効にする
-	SetAllAttackCollidersValid(!IsInValidDamage());
+	// ATTACK以外では攻撃判定を無効にする
+	if (state_ != STATE::ATTACK)
+	{
+		SetAllAttackCollidersValid(false);
+	}
 }
 
 void EnemyRat::UpdateProcessPost(void)
 {
+	if (uiSurprise_ != nullptr)
+	{
+		uiSurprise_->Update();
+	}
+
 	// 移動範囲外判定
 	if (!InMovableRange()
-		&& !(IsInValidDamage() || state_ == STATE::MOVE_IN_RANGE))
+		&& !(IsInValidDamage()
+			|| state_ == STATE::MOVE_IN_RANGE
+			|| state_ == STATE::SURPRISE
+			|| state_ == STATE::CHASE
+			|| state_ == STATE::ATTACK
+			|| state_ == STATE::ESCAPE))
 	{
 		ChangeState(STATE::THINK);
 	}
@@ -145,6 +240,19 @@ void EnemyRat::UpdateProcessPost(void)
 
 void EnemyRat::ChangeState(STATE state)
 {
+	if (state_ == STATE::SURPRISE && state != STATE::SURPRISE)
+	{
+		if (uiSurprise_ != nullptr)
+		{
+			uiSurprise_->SetActive(false);
+		}
+
+		if (state != STATE::CHASE)
+		{
+			canStartChase_ = true;
+		}
+	}
+
 	state_ = state;
 
 	// 各状態遷移の初期処理
@@ -245,6 +353,94 @@ void EnemyRat::ChangeStateMoveInRange(void)
 	moveInRangeTargetPos_.y = transform_.pos.y;
 
 	moveSpeed_ = MOVE_IN_RANGE_SPEED;
+
+	// 歩きアニメーション再生
+	animController_->Play(
+		static_cast<int>(ANIM_TYPE::WALK), true);
+}
+
+void EnemyRat::ChangeStateSurprise(void)
+{
+	stateUpdate_ = std::bind(&EnemyRat::UpdateSurprise, this);
+
+	// 移動せずプレイヤーの方を向く
+	movePow_ = SchoolUtility::VECTOR_ZERO;
+	if (targetTransform_ != nullptr)
+	{
+		VECTOR targetDir =
+			VSub(targetTransform_->pos, transform_.pos);
+		targetDir.y = 0.0f;
+		if (SchoolUtility::SqrMagnitude(targetDir)
+			> SchoolUtility::kEpsilonNormalSqrt)
+		{
+			moveDir_ = VNorm(targetDir);
+		}
+	}
+
+	// 待機アニメーション再生
+	animController_->Play(
+		static_cast<int>(ANIM_TYPE::IDLE), true);
+
+	if (uiSurprise_ != nullptr)
+	{
+		uiSurprise_->Start();
+	}
+}
+
+void EnemyRat::ChangeStateChase(void)
+{
+	stateUpdate_ = std::bind(&EnemyRat::UpdateChase, this);
+
+	if (isResumeChase_)
+	{
+		isResumeChase_ = false;
+	}
+	else
+	{
+		step_ = CHASE_TIME;
+	}
+
+	moveSpeed_ = CHASE_SPEED;
+	animController_->Play(
+		static_cast<int>(ANIM_TYPE::WALK), true);
+}
+
+void EnemyRat::ChangeStateAttack(void)
+{
+	stateUpdate_ = std::bind(&EnemyRat::UpdateAttack, this);
+
+	if (targetTransform_ == nullptr || attacks_.empty())
+	{
+		ChangeState(STATE::THINK);
+		return;
+	}
+
+	attackIndex_ = 0;
+	attackPhase_ = ATTACK_PHASE::PREPARE;
+	movePow_ = SchoolUtility::VECTOR_ZERO;
+	SetAllAttackCollidersValid(false);
+
+	VECTOR targetDir = VSub(targetTransform_->pos, transform_.pos);
+	targetDir.y = 0.0f;
+	if (SchoolUtility::SqrMagnitude(targetDir)
+		> SchoolUtility::kEpsilonNormalSqrt)
+	{
+		moveDir_ = VNorm(targetDir);
+	}
+
+	const ATTACK& attack = attacks_.at(attackIndex_);
+	animController_->Play(attack.prepareAnimIndex, false, 0.1f);
+	animController_->ResetPlayStep();
+}
+
+void EnemyRat::ChangeStateEscape(void)
+{
+	stateUpdate_ = std::bind(&EnemyRat::UpdateEscape, this);
+
+	step_ = ESCAPE_TIME;
+	moveSpeed_ = ESCAPE_SPEED;
+	movePow_ = SchoolUtility::VECTOR_ZERO;
+	SetAllAttackCollidersValid(false);
 
 	// 歩きアニメーション再生
 	animController_->Play(
@@ -360,6 +556,155 @@ void EnemyRat::UpdateMoveInRange(void)
 	movePow_ = VScale(moveDir_, moveSpeed_);
 }
 
+void EnemyRat::UpdateSurprise(void)
+{
+	movePow_ = SchoolUtility::VECTOR_ZERO;
+
+	if (uiSurprise_ != nullptr && uiSurprise_->IsActive())
+	{
+		return;
+	}
+
+	if (IsPlayerInViewRange(VIEW_RANGE, VIEW_ANGLE))
+	{
+		canStartChase_ = false;
+		ChangeState(STATE::CHASE);
+	}
+	else
+	{
+		ChangeState(STATE::THINK);
+	}
+}
+
+void EnemyRat::UpdateChase(void)
+{
+	if (targetTransform_ == nullptr)
+	{
+		movePow_ = SchoolUtility::VECTOR_ZERO;
+		ChangeState(STATE::THINK);
+		return;
+	}
+
+	if (IsPlayerInAttackRange(ATTACK_RANGE))
+	{
+		movePow_ = SchoolUtility::VECTOR_ZERO;
+		ChangeState(STATE::ATTACK);
+		return;
+	}
+
+	step_ -= scnMng_.GetDeltaTime();
+
+	// 視野内にまだプレイヤーがいるなら追跡時間延長
+	if (IsPlayerInViewRange(VIEW_RANGE, VIEW_ANGLE)
+		&& step_ < CHASE_CONTINUE)
+	{
+		step_ = CHASE_CONTINUE;
+	}
+
+	if (step_ <= 0.0f)
+	{
+		movePow_ = SchoolUtility::VECTOR_ZERO;
+		ChangeState(STATE::THINK);
+		return;
+	}
+
+	VECTOR targetDir =
+		VSub(targetTransform_->pos, transform_.pos);
+	targetDir.y = 0.0f;
+	if (SchoolUtility::SqrMagnitude(targetDir)
+		<= SchoolUtility::kEpsilonNormalSqrt)
+	{
+		movePow_ = SchoolUtility::VECTOR_ZERO;
+		return;
+	}
+
+	moveDir_ = GetObstacleAvoidMoveDir(targetDir);
+	movePow_ = VScale(moveDir_, moveSpeed_);
+}
+
+void EnemyRat::UpdateAttack(void)
+{
+	if (attacks_.empty())
+	{
+		SetAllAttackCollidersValid(false);
+		ChangeState(STATE::THINK);
+		return;
+	}
+
+	movePow_ = SchoolUtility::VECTOR_ZERO;
+
+	const ATTACK& attack = attacks_.at(attackIndex_);
+
+	if (attackPhase_ == ATTACK_PHASE::PREPARE)
+	{
+		SetAllAttackCollidersValid(false);
+
+		if (animController_->IsEnd(attack.prepareAnimIndex))
+		{
+			attackPhase_ = ATTACK_PHASE::ATTACK;
+			animController_->Play(attack.animIndex, false, 0.1f);
+			animController_->ResetPlayStep();
+		}
+		return;
+	}
+
+	const AnimationController::Animation& anim =
+		animController_->GetPlayAnim();
+
+	float playRate = 0.0f;
+	if (anim.totalTime > 0.0f)
+	{
+		playRate = anim.step / anim.totalTime;
+	}
+	SetAllAttackCollidersValid(
+		attack.IsValidCollision(playRate));
+
+	if (animController_->IsEnd(attack.animIndex))
+	{
+		SetAllAttackCollidersValid(false);
+		if (step_ > 0.0f)
+		{
+			isResumeChase_ = true;
+			ChangeState(STATE::CHASE);
+		}
+		else
+		{
+			ChangeState(STATE::THINK);
+		}
+	}
+}
+
+void EnemyRat::UpdateEscape(void)
+{
+	if (targetTransform_ == nullptr)
+	{
+		movePow_ = SchoolUtility::VECTOR_ZERO;
+		ChangeState(STATE::THINK);
+		return;
+	}
+
+	step_ -= scnMng_.GetDeltaTime();
+	if (step_ <= 0.0f)
+	{
+		movePow_ = SchoolUtility::VECTOR_ZERO;
+		ChangeState(STATE::THINK);
+		return;
+	}
+
+	VECTOR escapeDir =
+		VSub(transform_.pos, targetTransform_->pos);
+	escapeDir.y = 0.0f;
+	if (SchoolUtility::SqrMagnitude(escapeDir)
+		<= SchoolUtility::kEpsilonNormalSqrt)
+	{
+		escapeDir = VScale(transform_.GetForward(), -1.0f);
+		escapeDir.y = 0.0f;
+	}
+
+	moveDir_ = GetObstacleAvoidMoveDir(escapeDir);
+	movePow_ = VScale(moveDir_, moveSpeed_);
+}
+
 void EnemyRat::UpdateDead(void)
 {
 	step_ -= scnMng_.GetDeltaTime();
@@ -383,6 +728,211 @@ void EnemyRat::UpdateDead(void)
 
 void EnemyRat::UpdateEnd(void)
 {
+}
+
+void EnemyRat::DrawViewRangeProjection(void) const
+{
+	VECTOR projectionPoints
+		[VIEW_PROJECTION_RADIUS_DIVISIONS + 1]
+		[VIEW_PROJECTION_ANGLE_DIVISIONS + 1] = {};
+	bool isProjectionValid
+		[VIEW_PROJECTION_RADIUS_DIVISIONS + 1]
+		[VIEW_PROJECTION_ANGLE_DIVISIONS + 1] = {};
+
+	VECTOR centerPos = transform_.pos;
+	VECTOR projectionCenter = {};
+	const bool isCenterValid =
+		GetViewProjectionPoint(centerPos, projectionCenter);
+	for (int angleIndex = 0;
+		angleIndex <= VIEW_PROJECTION_ANGLE_DIVISIONS;
+		angleIndex++)
+	{
+		projectionPoints[0][angleIndex] = projectionCenter;
+		isProjectionValid[0][angleIndex] = isCenterValid;
+	}
+
+	VECTOR forward = transform_.GetForward();
+	forward.y = 0.0f;
+	if (SchoolUtility::SqrMagnitude(forward)
+		<= SchoolUtility::kEpsilonNormalSqrt)
+	{
+		return;
+	}
+	forward = VNorm(forward);
+
+	const float forwardAngle = atan2f(forward.x, forward.z);
+	for (int radiusIndex = 1;
+		radiusIndex <= VIEW_PROJECTION_RADIUS_DIVISIONS;
+		radiusIndex++)
+	{
+		const float radius = VIEW_RANGE
+			* static_cast<float>(radiusIndex)
+			/ static_cast<float>(VIEW_PROJECTION_RADIUS_DIVISIONS);
+
+		for (int angleIndex = 0;
+			angleIndex <= VIEW_PROJECTION_ANGLE_DIVISIONS;
+			angleIndex++)
+		{
+			const float angleRate =
+				static_cast<float>(angleIndex)
+				/ static_cast<float>(VIEW_PROJECTION_ANGLE_DIVISIONS);
+			const float localAngle =
+				(-VIEW_ANGLE + VIEW_ANGLE * 2.0f * angleRate)
+				* DX_PI_F / 180.0f;
+			const float angle = forwardAngle + localAngle;
+
+			VECTOR samplePos = centerPos;
+			samplePos.x += sinf(angle) * radius;
+			samplePos.z += cosf(angle) * radius;
+
+			isProjectionValid[radiusIndex][angleIndex] =
+				GetViewProjectionPoint(
+					samplePos,
+					projectionPoints[radiusIndex][angleIndex]);
+		}
+	}
+
+	SetUseZBuffer3D(TRUE);
+	SetWriteZBuffer3D(FALSE);
+	SetDrawBlendMode(
+		DX_BLENDMODE_ALPHA, VIEW_PROJECTION_ALPHA);
+
+	unsigned int color = GetColor(0, 0, 255);
+	if (state_ == STATE::SURPRISE)
+	{
+		color = GetColor(255, 255, 0);
+	}
+	else if (state_ == STATE::CHASE || state_ == STATE::ATTACK)
+	{
+		color = GetColor(255, 0, 0);
+	}
+
+	for (int angleIndex = 0;
+		angleIndex < VIEW_PROJECTION_ANGLE_DIVISIONS;
+		angleIndex++)
+	{
+		if (!isProjectionValid[0][angleIndex]
+			|| !isProjectionValid[1][angleIndex]
+			|| !isProjectionValid[1][angleIndex + 1])
+		{
+			continue;
+		}
+
+		DrawTriangle3D(
+			projectionPoints[0][angleIndex],
+			projectionPoints[1][angleIndex],
+			projectionPoints[1][angleIndex + 1],
+			color, TRUE);
+	}
+
+	for (int radiusIndex = 1;
+		radiusIndex < VIEW_PROJECTION_RADIUS_DIVISIONS;
+		radiusIndex++)
+	{
+		for (int angleIndex = 0;
+			angleIndex < VIEW_PROJECTION_ANGLE_DIVISIONS;
+			angleIndex++)
+		{
+			if (!isProjectionValid[radiusIndex][angleIndex]
+				|| !isProjectionValid[radiusIndex][angleIndex + 1]
+				|| !isProjectionValid[radiusIndex + 1][angleIndex]
+				|| !isProjectionValid[radiusIndex + 1][angleIndex + 1])
+			{
+				continue;
+			}
+
+			DrawTriangle3D(
+				projectionPoints[radiusIndex][angleIndex],
+				projectionPoints[radiusIndex + 1][angleIndex],
+				projectionPoints[radiusIndex + 1][angleIndex + 1],
+				color, TRUE);
+			DrawTriangle3D(
+				projectionPoints[radiusIndex][angleIndex],
+				projectionPoints[radiusIndex + 1][angleIndex + 1],
+				projectionPoints[radiusIndex][angleIndex + 1],
+				color, TRUE);
+		}
+	}
+
+	SetDrawBlendMode(DX_BLENDMODE_NOBLEND, 0);
+	SetWriteZBuffer3D(TRUE);
+}
+
+bool EnemyRat::GetViewProjectionPoint(
+	const VECTOR& pos, VECTOR& projectionPos) const
+{
+	VECTOR probeStart = pos;
+	probeStart.y = transform_.pos.y + VIEW_PROJECTION_PROBE_UP;
+	VECTOR probeEnd = pos;
+	probeEnd.y = transform_.pos.y - VIEW_PROJECTION_PROBE_DOWN;
+
+	bool isFoundGround = false;
+	MV1_COLL_RESULT_POLY groundHit = {};
+	for (const auto& hitCollider : hitColliders_)
+	{
+		if (hitCollider == nullptr || !hitCollider->IsValid()) continue;
+		if (hitCollider->GetTag() != ColliderBase::TAG::STAGE) continue;
+		if (hitCollider->GetShape() != ColliderBase::SHAPE::MODEL) continue;
+
+		const ColliderModel* colliderModel =
+			dynamic_cast<const ColliderModel*>(hitCollider);
+		if (colliderModel == nullptr) continue;
+
+		MV1_COLL_RESULT_POLY hit =
+			colliderModel->GetNearestHitPolyLine(
+				probeStart, probeEnd, true, false);
+		if (!hit.HitFlag || hit.Normal.y <= 0.0f) continue;
+
+		if (!isFoundGround
+			|| hit.HitPosition.y > groundHit.HitPosition.y)
+		{
+			isFoundGround = true;
+			groundHit = hit;
+		}
+	}
+
+	if (!isFoundGround) return false;
+
+	projectionPos = groundHit.HitPosition;
+	projectionPos.y += VIEW_PROJECTION_Y_OFFSET;
+	return true;
+}
+
+bool EnemyRat::IsPlayerInViewRange(
+	float range, float viewHalfAngle) const
+{
+	if (targetTransform_ == nullptr || range < 0.0f
+		|| viewHalfAngle < 0.0f) return false;
+
+	VECTOR targetDir = VSub(targetTransform_->pos, transform_.pos);
+	targetDir.y = 0.0f;
+	const float targetDistanceSq = SchoolUtility::SqrMagnitude(targetDir);
+	if (targetDistanceSq > range * range) return false;
+	if (targetDistanceSq <= SchoolUtility::kEpsilonNormalSqrt) return true;
+
+	VECTOR forward = transform_.GetForward();
+	forward.y = 0.0f;
+	if (SchoolUtility::SqrMagnitude(forward)
+		<= SchoolUtility::kEpsilonNormalSqrt) return false;
+
+	targetDir = VNorm(targetDir);
+	forward = VNorm(forward);
+
+	const float viewAngleRad =
+		viewHalfAngle * DX_PI_F / 180.0f;
+	const float minDot = cosf(viewAngleRad);
+	return VDot(forward, targetDir) >= minDot;
+}
+
+bool EnemyRat::IsPlayerInAttackRange(float range) const
+{
+	if (targetTransform_ == nullptr || range < 0.0f) return false;
+
+	VECTOR targetDir =
+		VSub(targetTransform_->pos, transform_.pos);
+	targetDir.y = 0.0f;
+	return SchoolUtility::SqrMagnitude(targetDir)
+		<= range * range;
 }
 
 bool EnemyRat::IsInValidDamage(void) const
@@ -416,7 +966,7 @@ void EnemyRat::OnEndKnockBack(void)
 	}
 	else
 	{
-		ChangeState(STATE::THINK);
+		ChangeState(STATE::ESCAPE);
 	}
 }
 
@@ -433,6 +983,6 @@ void EnemyRat::OnEndDamaged(void)
 	}
 	else
 	{
-		ChangeState(STATE::THINK);
+		ChangeState(STATE::ESCAPE);
 	}
 }

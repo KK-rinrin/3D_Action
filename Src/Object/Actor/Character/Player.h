@@ -2,6 +2,7 @@
 #include "CharacterBase.h"
 #include <functional>
 #include <map>
+#include <vector>
 
 class AnimationController;
 class WeaponBase;
@@ -64,6 +65,18 @@ private:
 	static constexpr int INIT_MAX_HP = 5;
 	// ダメージ無敵時間
 	static constexpr float DAMAGE_INVINCIBLE_TIME = 1.0f;
+	// 被弾リアクション時間
+	static constexpr float DAMAGE_REACTION_TIME = 0.35f;
+	// 被弾点滅速度
+	static constexpr float DAMAGE_BLINK_SPEED = 20.0f;
+	// 被弾時の画面赤表示の最大透明度
+	static constexpr int DAMAGE_SCREEN_ALPHA = 96;
+	// 被弾時に画面を揺らすフレーム数
+	static constexpr int DAMAGE_SHAKE_FRAME = 10;
+	// 画面揺れの方向を更新する間隔
+	static constexpr int DAMAGE_SHAKE_UPDATE_FRAME = 3;
+	// 画面揺れの強さ
+	static constexpr float DAMAGE_SHAKE_POWER = 10.0f;
 
 	// HPバー表示位置・サイズ
 	static constexpr int HP_BAR_X = 30;
@@ -249,6 +262,12 @@ private:
 	int maxHp_;
 	// ダメージ無敵残り時間
 	float damageInvincibleStep_;
+	// 被弾リアクション残り時間
+	float damageReactionStep_;
+	// プレイヤーモデルの通常時自己発光色
+	std::vector<COLOR_F> materialEmiColors_;
+	// プレイヤーモデルの被弾時自己発光色
+	std::vector<COLOR_F> materialEmiDamageColors_;
 
 	// 操作
 	bool isDash_ = false;
@@ -277,6 +296,12 @@ private:
 	void UpdateNone(void);
 	void UpdatePlay(void);
 	void UpdateAttack(void);
+
+	// 被弾演出
+	void InitDamage(void);
+	void StartDamage(void);
+	void UpdateDamage(void);
+	void SetDamageEmiColor(bool isDamageColor);
 
 	// 衝突系
 	void CollisionReserve(void) override;			// 衝突準備

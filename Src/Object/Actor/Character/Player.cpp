@@ -45,6 +45,7 @@ Player::Player(InputBinder* inputBinder)
 	hp_(INIT_MAX_HP),
 	maxHp_(INIT_MAX_HP),
 	damageInvincibleStep_(0.0f),
+	damageReactionStep_(0.0f),
 	inputBinder_(inputBinder),
 	state_(STATE::NONE),
 	weapon_(nullptr)
@@ -82,6 +83,21 @@ void Player::Draw()
 
 void Player::DrawUI(void) const
 {
+	// 被弾直後は画面全体を赤くフェードしてダメージを強調
+	if (damageReactionStep_ > 0.0f)
+	{
+		const float damageRate =
+			damageReactionStep_ / DAMAGE_REACTION_TIME;
+		const int alpha =
+			static_cast<int>(DAMAGE_SCREEN_ALPHA * damageRate);
+		SetDrawBlendMode(DX_BLENDMODE_ALPHA, alpha);
+		DrawBox(
+			0, 0,
+			Application::SCREEN_SIZE_X, Application::SCREEN_SIZE_Y,
+			GetColor(255, 0, 0), true);
+		SetDrawBlendMode(DX_BLENDMODE_NOBLEND, 0);
+	}
+
 	// 画面左下を基準に表示
 	const int hpBarY = Application::SCREEN_SIZE_Y - 70;
 
@@ -139,6 +155,7 @@ bool Player::Damage(int damage)
 	if (hp_ < 0) hp_ = 0;
 
 	damageInvincibleStep_ = DAMAGE_INVINCIBLE_TIME;
+	StartDamage();
 	return true;
 }
 
@@ -249,6 +266,9 @@ void Player::InitPost(void)
 		STATE::PLAY, std::bind(&Player::ChangeStatePlay, this));
 	stateChanges_.emplace(
 		STATE::ATTACK, std::bind(&Player::ChangeStateAttack, this));
+
+	InitDamage();
+
 	// 初期状態
 	ChangeState(STATE::PLAY);
 
@@ -257,15 +277,7 @@ void Player::InitPost(void)
 
 void Player::UpdateProcess(void)
 {
-	// ダメージ無敵時間を更新
-	if (damageInvincibleStep_ > 0.0f)
-	{
-		damageInvincibleStep_ -= scnMng_.GetDeltaTime();
-		if (damageInvincibleStep_ < 0.0f)
-		{
-			damageInvincibleStep_ = 0.0f;
-		}
-	}
+	UpdateDamage();
 
 	// 現在のステートの更新
 	stateUpdate_();
@@ -550,6 +562,87 @@ void Player::UpdateAttack(void)
 	}
 #endif
 #pragma endregion
+}
+
+void Player::InitDamage(void)
+{
+	const COLOR_F DAMAGE_EMI_POWER = { 1.0f, 0.15f, 0.15f, 0.0f };
+	const int materialNum = MV1GetMaterialNum(transform_.modelId);
+
+	for (int i = 0; i < materialNum; ++i)
+	{
+		const COLOR_F defaultColor =
+			MV1GetMaterialEmiColor(transform_.modelId, i);
+		materialEmiColors_.emplace_back(defaultColor);
+
+		COLOR_F damageColor = defaultColor;
+		damageColor.r =
+			SchoolUtility::Clamp(
+				damageColor.r + DAMAGE_EMI_POWER.r, 0.0f, 1.0f);
+		damageColor.g =
+			SchoolUtility::Clamp(
+				damageColor.g + DAMAGE_EMI_POWER.g, 0.0f, 1.0f);
+		damageColor.b =
+			SchoolUtility::Clamp(
+				damageColor.b + DAMAGE_EMI_POWER.b, 0.0f, 1.0f);
+		materialEmiDamageColors_.emplace_back(damageColor);
+	}
+}
+
+void Player::StartDamage(void)
+{
+	damageReactionStep_ = DAMAGE_REACTION_TIME;
+	SetDamageEmiColor(true);
+
+	Camera* camera = scnMng_.GetCamera();
+	if (camera != nullptr)
+	{
+		camera->StartShake(
+			DAMAGE_SHAKE_FRAME,
+			DAMAGE_SHAKE_UPDATE_FRAME,
+			DAMAGE_SHAKE_POWER);
+	}
+}
+
+void Player::UpdateDamage(void)
+{
+	const float deltaTime = scnMng_.GetDeltaTime();
+
+	if (damageReactionStep_ > 0.0f)
+	{
+		damageReactionStep_ -= deltaTime;
+		if (damageReactionStep_ < 0.0f)
+		{
+			damageReactionStep_ = 0.0f;
+		}
+	}
+
+	if (damageInvincibleStep_ <= 0.0f) return;
+
+	damageInvincibleStep_ -= deltaTime;
+	if (damageInvincibleStep_ <= 0.0f)
+	{
+		damageInvincibleStep_ = 0.0f;
+		SetDamageEmiColor(false);
+		return;
+	}
+
+	const float elapsed =
+		DAMAGE_INVINCIBLE_TIME - damageInvincibleStep_;
+	const int blinkStep =
+		static_cast<int>(elapsed * DAMAGE_BLINK_SPEED);
+	SetDamageEmiColor(blinkStep % 2 == 0);
+}
+
+void Player::SetDamageEmiColor(bool isDamageColor)
+{
+	const std::vector<COLOR_F>& colors =
+		isDamageColor ? materialEmiDamageColors_ : materialEmiColors_;
+
+	for (int i = 0; i < static_cast<int>(colors.size()); ++i)
+	{
+		MV1SetMaterialEmiColor(transform_.modelId, i, colors[i]);
+	}
 }
 
 void Player::CollisionReserve(void)
